@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-31
+
 ### Added
 - Swap the two panes of a profile with the ⇄ button between them, ⌃⌘X, or **Profil → Tukar
   Posisi Pane**. Pages keep running (nothing reloads), each pane keeps its width, and the new
@@ -84,5 +86,6 @@ All notable changes to this project are documented here. The format follows
   panes, popups that stay in their profile, downloads, uploads, camera/microphone prompts.
 - Self-tests for profile isolation and persistence.
 
-[Unreleased]: https://github.com/XNyetok/XSpace/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/XNyetok/XSpace/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/XNyetok/XSpace/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/XNyetok/XSpace/releases/tag/v0.3.1
