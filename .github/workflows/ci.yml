@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: Build and self-test
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Toolchain
+        run: |
+          sw_vers
+          xcodebuild -version
+          swift --version
+
+      - name: Build app bundle (ad-hoc signed)
+        run: ./scripts/build.sh
+
+      - name: Self-test (offline)
+        env:
+          XSPACE_SELFTEST_OFFLINE: "1"
+        run: |
+          build/XSpace.app/Contents/MacOS/XSpace --selftest
+          build/XSpace.app/Contents/MacOS/XSpace --selftest-persist

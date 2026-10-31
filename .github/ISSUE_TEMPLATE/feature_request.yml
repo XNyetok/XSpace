@@ -1,0 +1,30 @@
+name: Feature request
+description: Suggest an idea for XSpace
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        XSpace aims to stay light, private and native. Ideas in English or Bahasa Indonesia are welcome.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+      description: Describe your workflow and what is missing today.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you considered
+  - type: textarea
+    id: cost
+    attributes:
+      label: Impact on memory, privacy or permissions
+      description: Would this need more memory, network access, injected scripts or new sandbox entitlements?

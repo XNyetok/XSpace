@@ -1,0 +1,57 @@
+name: Bug report
+description: Something does not work as expected
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report! Issues in English or Bahasa Indonesia are welcome.
+
+        **Do not include personal data** (email addresses, account names, cookies, screenshots of
+        private documents). For security problems, follow [SECURITY.md](https://github.com/XNyetok/XSpace/blob/main/SECURITY.md)
+        instead of opening an issue.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What went wrong, and what did you expect instead?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open profile ...
+        2. Click ...
+        3. See ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: XSpace version or commit
+      placeholder: 0.3.0 or a commit SHA
+    validations:
+      required: true
+  - type: input
+    id: system
+    attributes:
+      label: macOS version and Mac
+      placeholder: macOS 15.4, Apple M2, 8 GB RAM
+    validations:
+      required: true
+  - type: dropdown
+    id: signing
+    attributes:
+      label: How was the app built?
+      options:
+        - scripts/build.sh with an Apple Development / Developer ID identity
+        - scripts/build.sh with ad-hoc signing
+        - Other
+  - type: textarea
+    id: logs
+    attributes:
+      label: Self-test output or logs (optional)
+      description: For example the output of `build/XSpace.app/Contents/MacOS/XSpace --selftest`. Remove personal data first.
+      render: shell
