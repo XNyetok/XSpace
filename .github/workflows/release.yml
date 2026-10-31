@@ -1,0 +1,90 @@
+name: Release
+
+# Pushing a tag such as v0.3.1 builds the app, tests it and publishes a GitHub release.
+# The tag must match CFBundleShortVersionString in Support/Info.plist, and CHANGELOG.md must
+# have a section for that version (it becomes the release notes).
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and publish
+    runs-on: macos-15
+    timeout-minutes: 30
+    env:
+      XSPACE_SELFTEST_OFFLINE: "1"
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Check that the tag matches the app version
+        run: |
+          version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Support/Info.plist)"
+          if [[ "$GITHUB_REF_NAME" != "v$version" ]]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match version $version in Support/Info.plist"
+            exit 1
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+
+      - name: Toolchain
+        run: |
+          sw_vers
+          xcodebuild -version
+
+      - name: Build universal app (ad-hoc signed)
+        env:
+          XSPACE_WARNINGS_AS_ERRORS: "1"
+        run: ./scripts/build.sh --universal
+
+      - name: Self-test (Apple silicon)
+        run: |
+          build/XSpace.app/Contents/MacOS/XSpace --selftest
+          build/XSpace.app/Contents/MacOS/XSpace --selftest-persist
+
+      - name: Self-test (Intel, through Rosetta)
+        run: |
+          if ! arch -x86_64 /usr/bin/true 2>/dev/null; then
+            echo "::notice::Rosetta is not installed on this runner, so the Intel build was not run."
+            exit 0
+          fi
+          arch -x86_64 build/XSpace.app/Contents/MacOS/XSpace --selftest
+          arch -x86_64 build/XSpace.app/Contents/MacOS/XSpace --selftest-persist
+
+      - name: Package
+        working-directory: build
+        run: |
+          ditto -c -k --sequesterRsrc --keepParent XSpace.app "XSpace-$VERSION.zip"
+          shasum -a 256 "XSpace-$VERSION.zip" > "XSpace-$VERSION.zip.sha256"
+          cat "XSpace-$VERSION.zip.sha256"
+
+      - name: Release notes from CHANGELOG.md
+        run: |
+          awk -v version="$VERSION" '
+            index($0, "## [" version "]") == 1 { found = 1; next }
+            found && /^## \[/ { exit }
+            found { print }
+          ' CHANGELOG.md > build/notes.md
+          if ! grep -q '[^[:space:]]' build/notes.md; then
+            echo "::error::CHANGELOG.md has no section for $VERSION"
+            exit 1
+          fi
+          {
+            echo
+            echo "---"
+            echo
+            echo "**Install:** download \`XSpace-$VERSION.zip\`, unzip it and move XSpace.app to Applications" \
+              "(macOS 14 or later, Apple silicon and Intel). Releases are not notarized yet, so the first" \
+              "launch needs one extra step: see [Install]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY#install)."
+          } >> build/notes.md
+          cat build/notes.md
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            "build/XSpace-$VERSION.zip" "build/XSpace-$VERSION.zip.sha256" \
+            --title "XSpace $VERSION" --notes-file build/notes.md --verify-tag
