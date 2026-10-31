@@ -99,8 +99,10 @@ enum Palette {
         .systemTeal, .systemRed, .systemIndigo, .systemBrown, .systemYellow,
     ]
 
+    /// Every index maps to a color, even an odd one from a hand-edited state.json.
+    /// (`magnitude` instead of `abs`, which traps on Int.min.)
     static func color(_ index: Int) -> NSColor {
-        colors[abs(index) % colors.count]
+        colors[Int(index.magnitude % UInt(colors.count))]
     }
 
     static func dot(_ color: NSColor, diameter: CGFloat = 9) -> NSImage {

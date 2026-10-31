@@ -147,17 +147,27 @@ final class DownloadCoordinator: NSObject, WKDownloadDelegate {
                   suggestedFilename: String,
                   completionHandler: @escaping @MainActor (URL?) -> Void) {
         let folder = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
-        let name = suggestedFilename.isEmpty ? "download" : suggestedFilename
+        let candidate = Self.destination(in: folder, suggestedFilename: suggestedFilename)
+        destinations[ObjectIdentifier(download)] = candidate
+        completionHandler(candidate)
+    }
+
+    /// Where a download is saved: the name the site suggests without any folder part, so the
+    /// file always lands directly in `folder`, and "name 2.ext", "name 3.ext", ... instead of
+    /// overwriting an existing file, like Safari.
+    static func destination(in folder: URL, suggestedFilename: String,
+                            exists: (String) -> Bool = { FileManager.default.fileExists(atPath: $0) }) -> URL {
+        var name = suggestedFilename.components(separatedBy: "/").last ?? ""
+        if name.isEmpty || name == "." || name == ".." { name = "download" }
         var candidate = folder.appendingPathComponent(name)
         let base = candidate.deletingPathExtension().lastPathComponent
         let ext = candidate.pathExtension
         var counter = 2
-        while FileManager.default.fileExists(atPath: candidate.path) {
+        while exists(candidate.path) {
             candidate = folder.appendingPathComponent(ext.isEmpty ? "\(base) \(counter)" : "\(base) \(counter).\(ext)")
             counter += 1
         }
-        destinations[ObjectIdentifier(download)] = candidate
-        completionHandler(candidate)
+        return candidate
     }
 
     func downloadDidFinish(_ download: WKDownload) {

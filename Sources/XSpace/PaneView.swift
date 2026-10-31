@@ -267,7 +267,8 @@ final class PaneView: NSView, WKNavigationDelegate, WKUIDelegate {
     }
 
     /// Turns address-bar input into a URL: full URLs as is, "example.com" as https,
-    /// anything else as a Google search.
+    /// "localhost:3000" and IP addresses as http (local servers rarely have TLS; Safari does the
+    /// same), anything else as a Google search.
     static func resolve(_ text: String) -> URL? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
@@ -276,7 +277,10 @@ final class PaneView: NSView, WKNavigationDelegate, WKUIDelegate {
             return url
         }
         if !trimmed.contains(" "), trimmed.contains(".") || trimmed.hasPrefix("localhost") {
-            return URL(string: "https://" + trimmed)
+            let host = trimmed.prefix { !":/?#".contains($0) }
+            let octets = host.split(separator: ".", omittingEmptySubsequences: false)
+            let isLocal = host == "localhost" || (octets.count == 4 && octets.allSatisfy { UInt8($0) != nil })
+            return URL(string: (isLocal ? "http://" : "https://") + trimmed)
         }
         var components = URLComponents(string: "https://www.google.com/search")
         components?.queryItems = [URLQueryItem(name: "q", value: trimmed)]
