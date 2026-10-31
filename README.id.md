@@ -34,24 +34,45 @@ bercampur dan tanpa banyak jendela browser yang tersebar di beberapa Space.
 
 ## Kebutuhan
 
-- macOS 14 Sonoma atau lebih baru
+- macOS 14 Sonoma atau lebih baru. CI menguji macOS 15 dan 26; macOS 14 tetap didukung tapi
+  tidak lagi diuji otomatis karena GitHub sudah menghentikan runner macOS 14.
 - Untuk build: Xcode 16+ (atau Command Line Tools dengan Swift 5.10+)
 
-## Build & jalankan
+## Instal
+
+Unduh `XSpace-<versi>.zip` dari [Releases](https://github.com/XNyetok/XSpace/releases), ekstrak,
+lalu pindahkan **XSpace.app** ke folder Applications. Build rilis jalan di Mac Apple silicon
+maupun Intel.
+
+Rilis belum dinotarisasi Apple (butuh Developer ID berbayar), jadi macOS memblokir pembukaan
+pertama:
+
+- **macOS 15 ke atas:** buka XSpace, klik **Selesai** di peringatan, lalu buka **Pengaturan
+  Sistem → Privasi & Keamanan** dan klik **Tetap Buka** di pesan tentang XSpace.
+- **macOS 14:** Control-klik XSpace.app di Finder, pilih **Buka**, lalu **Buka** lagi.
+
+Build rilis ditandatangani ad-hoc, jadi setelah update macOS bisa bertanya apakah XSpace boleh
+mengakses datanya: pilih **Izinkan**, kalau tidak profil kamu tidak akan muncul. Build sendiri
+dengan sertifikat Apple Development gratis (lihat di bawah) menghindari kedua pertanyaan itu.
+
+## Build dari source
 
 ```bash
 git clone https://github.com/XNyetok/XSpace.git
 cd XSpace
-./scripts/build.sh             # hasil: build/XSpace.app
+./scripts/build.sh               # hasil: build/XSpace.app untuk Mac ini
 open build/XSpace.app
-./scripts/build.sh --install   # opsional: salin ke ~/Applications
+./scripts/build.sh --install     # opsional: salin juga ke ~/Applications
+./scripts/build.sh --universal   # opsional: Apple silicon + Intel (dipakai untuk rilis)
 ```
 
 **Tanda tangan kode.** `build.sh` memakai identitas *Apple Development* atau *Developer ID
-Application* pertama yang valid di keychain, atau yang disebut di `XSPACE_SIGN_IDENTITY`. Tanpa
-identitas, app ditandatangani ad-hoc: tetap jalan, tapi karena tanda tangan app ber-sandbox
-berubah tiap build, macOS bisa meminta konfirmasi setelah build ulang. Sertifikat Apple
-Development gratis (Xcode → Settings → Accounts → Manage Certificates) menghindari hal itu.
+Application* pertama yang valid di keychain, atau yang disebut di `XSPACE_SIGN_IDENTITY` (`-`
+memaksa ad-hoc). Tanpa identitas, app ditandatangani ad-hoc: tetap jalan, tapi karena tanda
+tangan app ber-sandbox berubah tiap build, macOS bisa meminta konfirmasi setelah build ulang.
+Sertifikat Apple Development gratis (Xcode → Settings → Accounts → Manage Certificates)
+menghindari hal itu. Tanda tangan Developer ID juga diberi timestamp aman yang diwajibkan untuk
+notarisasi.
 
 ## Cara pakai
 
@@ -110,6 +131,7 @@ profil; sesinya tersimpan.
 ## Pengembangan
 
 ```bash
+swift test                 # unit test: kolom alamat, state tersimpan, pembagi pane, unduhan, ...
 APP=build/XSpace.app/Contents/MacOS/XSpace
 $APP --selftest            # isolasi profil, halaman Google, User-Agent, persistensi (tulis)
 $APP --selftest-persist    # persistensi (baca ulang) + bersih-bersih
@@ -117,10 +139,35 @@ $APP --selftest-ui         # jendela sungguhan dengan state sementara: pembekuan
 ```
 
 Semua self-test memakai profil uji sementara dan tidak menyentuh profil asli. Set
-`XSPACE_SELFTEST_OFFLINE=1` untuk melewati bagian yang butuh internet (dipakai CI).
+`XSPACE_SELFTEST_OFFLINE=1` untuk melewati bagian yang butuh internet. CI menjalankan semuanya
+(offline) di macOS 15 dan 26 dan menganggap warning compiler sebagai error;
+`XSPACE_WARNINGS_AS_ERRORS=1 ./scripts/build.sh` melakukan hal yang sama di lokal.
+
+| File | Isi |
+|---|---|
+| `Sources/XSpace/Models.swift` | state yang disimpan; satu profil = satu `WKWebsiteDataStore` |
+| `Sources/XSpace/WebKitSupport.swift` | konfigurasi webview, User-Agent Safari, unduhan, halaman error |
+| `Sources/XSpace/PaneView.swift` | satu pane: toolbar mini + `WKWebView` + delegate navigasi/UI |
+| `Sources/XSpace/ProfileRowView.swift` | baris profil, pembagi pane, container grid |
+| `Sources/XSpace/MainWindowController.swift` | jendela utama, toolbar, aksi profil, hemat RAM |
+| `Sources/XSpace/MemoryMonitor.swift` | pengukuran memori dan pemantau tekanan memori macOS |
+| `Sources/XSpace/PopupWindowController.swift` | popup yang tetap di profilnya |
+| `Sources/XSpace/AppDelegate.swift` | menu dan siklus hidup app |
+| `Sources/XSpace/SelfTest.swift`, `UISelfTest.swift` | self-test |
+| `Tests/XSpaceTests/` | unit test (`swift test`) |
+| `scripts/build.sh` | build dan tanda tangan `build/XSpace.app` |
+| `scripts/make-icon.swift` | menggambar ikon app (`Support/AppIcon.icns`) |
 
 Panduan kontribusi: [CONTRIBUTING.md](CONTRIBUTING.md). Issue dan PR boleh dalam Bahasa
 Indonesia atau Inggris.
+
+## Rencana
+
+- UI bahasa Inggris dan lokalisasi yang rapi (Indonesia + Inggris)
+- Layout fleksibel: jumlah pane per profil, preset per workspace
+- Rilis yang ditandatangani Developer ID dan dinotarisasi (saat ini rilis masih ad-hoc)
+- Proxy per profil (opsional)
+- Notifikasi web diteruskan ke notifikasi macOS
 
 ## Lisensi
 

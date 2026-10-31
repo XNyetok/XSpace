@@ -35,24 +35,44 @@ accounts ever mixing and without a pile of browser windows spread across Spaces.
 
 ## Requirements
 
-- macOS 14 Sonoma or later
+- macOS 14 Sonoma or later. CI covers macOS 15 and 26; macOS 14 is supported but no longer
+  tested automatically, because GitHub retired its macOS 14 runners.
 - To build: Xcode 16 or later (or the Command Line Tools with Swift 5.10+)
 
-## Build and run
+## Install
+
+Download `XSpace-<version>.zip` from [Releases](https://github.com/XNyetok/XSpace/releases),
+unzip it and move **XSpace.app** to Applications. Release builds run on Apple silicon and Intel
+Macs.
+
+Releases are not notarized by Apple yet (that needs a paid Developer ID), so macOS blocks the
+first launch:
+
+- **macOS 15 and later:** open XSpace, click **Done** in the warning, then open **System
+  Settings → Privacy & Security** and click **Open Anyway** next to the message about XSpace.
+- **macOS 14:** Control-click XSpace.app in Finder, choose **Open**, then **Open** again.
+
+Release builds are ad-hoc signed, so after an update macOS may ask whether XSpace may access
+its data: choose **Allow**, or your profiles will not be available. Building XSpace yourself with
+a free Apple Development certificate (below) avoids both prompts.
+
+## Build from source
 
 ```bash
 git clone https://github.com/XNyetok/XSpace.git
 cd XSpace
-./scripts/build.sh             # → build/XSpace.app
+./scripts/build.sh               # → build/XSpace.app for this Mac
 open build/XSpace.app
-./scripts/build.sh --install   # optional: copy to ~/Applications
+./scripts/build.sh --install     # optional: also copy to ~/Applications
+./scripts/build.sh --universal   # optional: Apple silicon + Intel (used for releases)
 ```
 
 **Code signing.** `build.sh` signs with the first valid *Apple Development* or *Developer ID
-Application* identity in your keychain, or the one named in `XSPACE_SIGN_IDENTITY`. Without an
-identity the app is ad-hoc signed: it still works, but because the sandboxed app's signature
-changes on every rebuild, macOS may ask for confirmation after rebuilding. A free Apple
-Development certificate (Xcode → Settings → Accounts → Manage Certificates) avoids that.
+Application* identity in your keychain, or the one named in `XSPACE_SIGN_IDENTITY` (`-` forces
+ad-hoc). Without an identity the app is ad-hoc signed: it still works, but because the sandboxed
+app's signature changes on every rebuild, macOS may ask for confirmation after rebuilding. A
+free Apple Development certificate (Xcode → Settings → Accounts → Manage Certificates) avoids
+that. Developer ID signatures also get the secure timestamp that notarization requires.
 
 ## Using XSpace
 
@@ -110,6 +130,7 @@ sign in once per profile; the session is kept.
 ## Development
 
 ```bash
+swift test                 # unit tests: address bar, saved state, pane splitter, downloads, ...
 APP=build/XSpace.app/Contents/MacOS/XSpace
 $APP --selftest            # profile isolation, Google pages, User-Agent, persistence (write)
 $APP --selftest-persist    # persistence (read back) + cleanup
@@ -117,7 +138,9 @@ $APP --selftest-ui         # real window with throwaway state: freezing + RAM in
 ```
 
 All self-tests use their own throwaway profiles and never touch your real ones. Set
-`XSPACE_SELFTEST_OFFLINE=1` to skip the parts that need the network (CI does this).
+`XSPACE_SELFTEST_OFFLINE=1` to skip the parts that need the network. CI runs all of the above
+(offline) on macOS 15 and 26 and treats compiler warnings as errors;
+`XSPACE_WARNINGS_AS_ERRORS=1 ./scripts/build.sh` does the same locally.
 
 | File | Contents |
 |---|---|
@@ -130,6 +153,9 @@ All self-tests use their own throwaway profiles and never touch your real ones. 
 | `Sources/XSpace/PopupWindowController.swift` | popups that stay in their profile |
 | `Sources/XSpace/AppDelegate.swift` | menus and app lifecycle |
 | `Sources/XSpace/SelfTest.swift`, `UISelfTest.swift` | self-tests |
+| `Tests/XSpaceTests/` | unit tests (`swift test`) |
+| `scripts/build.sh` | builds and signs `build/XSpace.app` |
+| `scripts/make-icon.swift` | draws the app icon (`Support/AppIcon.icns`) |
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
 
@@ -137,7 +163,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
 
 - English UI and proper localization (Indonesian + English)
 - Flexible layouts: number of panes per profile, presets per workspace
-- Signed and notarized releases (Developer ID)
+- Notarized releases signed with a Developer ID (releases are ad-hoc signed for now)
 - Optional per-profile proxy
 - Web notifications bridged to macOS notifications
 

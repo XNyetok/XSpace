@@ -31,7 +31,7 @@ body:
     id: version
     attributes:
       label: XSpace version or commit
-      placeholder: 0.3.0 or a commit SHA
+      placeholder: 0.3.1 or a commit SHA
     validations:
       required: true
   - type: input
@@ -44,8 +44,9 @@ body:
   - type: dropdown
     id: signing
     attributes:
-      label: How was the app built?
+      label: How did you get the app?
       options:
+        - Downloaded from GitHub Releases
         - scripts/build.sh with an Apple Development / Developer ID identity
         - scripts/build.sh with ad-hoc signing
         - Other

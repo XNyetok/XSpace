@@ -4,7 +4,8 @@
 
 ## How was it tested?
 
-- [ ] `./scripts/build.sh` builds without warnings
+- [ ] `swift test` passes
+- [ ] `XSPACE_WARNINGS_AS_ERRORS=1 ./scripts/build.sh` builds (no warnings)
 - [ ] `XSpace --selftest` and `XSpace --selftest-persist` pass
 - [ ] `XSpace --selftest-ui` passes (for UI or memory changes)
 - [ ] Checked manually in the app:
