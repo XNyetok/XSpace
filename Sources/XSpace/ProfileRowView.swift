@@ -124,7 +124,8 @@ final class PaneSplitView: NSView {
                 dividers.append(divider)
             }
         }
-        if ratios.count != views.count { ratios = equalRatios(views.count) }
+        // A frozen row has no panes: keep its ratios for when the panes come back.
+        if !views.isEmpty && ratios.count != views.count { ratios = equalRatios(views.count) }
         needsLayout = true
     }
 

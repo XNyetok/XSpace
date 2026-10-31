@@ -56,6 +56,17 @@ final class PaneSplitViewTests: XCTestCase {
         XCTAssertEqual(reported?.count, 2)
     }
 
+    /// A frozen row has no panes; its widths must still be there when it is opened again.
+    @MainActor
+    func testWidthsSurviveFreezing() {
+        let (split, _) = makeSplit(width: 1006, panes: 2, ratios: [0.3, 0.7])
+        split.setPanes([])
+        let views = [NSView(), NSView()]
+        split.setPanes(views)
+        split.layout()
+        XCTAssertEqual(views.map(\.frame.width), [300, 700])
+    }
+
     @MainActor
     func testEqualizeResetsTheWidths() {
         let (split, views) = makeSplit(width: 1006, panes: 2, ratios: [0.3, 0.7])

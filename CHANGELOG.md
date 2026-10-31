@@ -6,6 +6,10 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+- Pane widths went back to equal after a frozen profile was opened again (until the next
+  launch).
+
 ## [0.3.1] - 2026-10-31
 
 ### Added
