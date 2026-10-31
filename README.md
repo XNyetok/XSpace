@@ -26,6 +26,7 @@ accounts ever mixing and without a pile of browser windows spread across Spaces.
 
 - Profiles with fully isolated website data (one `WKWebsiteDataStore(forIdentifier:)` each)
 - Panes side by side within a profile (default: Google AI Studio | Google Sheets), resizable
+  and swappable
 - **Focus** mode (one profile) and **All** mode (every profile stacked in a grid)
 - Color-coded profiles and pane borders, so you always know which account you are in
 - Popups and sign-in windows stay inside their profile
@@ -86,6 +87,7 @@ that. Developer ID signatures also get the secure timestamp that notarization re
 | Reload / back / forward | ⌘R / ⌘[ / ⌘] |
 | Zoom a pane | ⌘= / ⌘- / ⌘0 |
 | Resize panes | drag the divider; double-click it to equalize |
+| Swap the two panes | the ⇄ button between them, ⌃⌘X, or **Profil → Tukar Posisi Pane** |
 | Memory usage and saving | the **RAM …** indicator, or **Tampilan → Hemat RAM** |
 
 ### Memory saving

@@ -411,6 +411,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
             let menu = NSMenu()
             menu.addItem(menuItem("Ganti Nama Profil…", #selector(renameProfile(_:))))
             menu.addItem(menuItem("Ganti Warna Profil", #selector(cycleProfileColor(_:))))
+            menu.addItem(menuItem("Tukar Posisi Pane", #selector(swapPanes(_:))))
             menu.addItem(menuItem("Atur Ulang Pane ke Default", #selector(resetPanes(_:))))
             menu.addItem(.separator())
             menu.addItem(menuItem("Hapus Profil…", #selector(deleteProfile(_:))))
@@ -525,6 +526,12 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         rebuildSwitcher()
     }
 
+    /// Swaps the two panes of the selected profile (the first two, should it have more).
+    @objc func swapPanes(_ sender: Any?) {
+        guard let profile = selectedProfile else { return }
+        rows[profile.id]?.swapPanes(at: 0)
+    }
+
     @objc func resetPanes(_ sender: Any?) {
         guard let profile = selectedProfile else { return }
         rows[profile.id]?.resetToDefaults()
@@ -619,6 +626,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
             menuItem.state = isSelected ? .on : .off
         case #selector(deleteProfile(_:)):
             return profiles.count > 1
+        case #selector(swapPanes(_:)):
+            return (selectedProfile.flatMap { rows[$0.id] }?.urls.count ?? 0) > 1
         case #selector(reloadPane(_:)), #selector(backPane(_:)), #selector(forwardPane(_:)),
              #selector(openLocation(_:)), #selector(zoomInPane(_:)), #selector(zoomOutPane(_:)),
              #selector(actualSizePane(_:)):

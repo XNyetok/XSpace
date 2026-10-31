@@ -91,7 +91,31 @@ final class UISelfTest: NSObject, NSApplicationDelegate {
         controller.hibernateIdleProfiles(now: Date().addingTimeInterval(16 * 60))
         check(paneCount(controller, second) == 0, "Frozen after 15 minutes off screen")
 
-        log("\n[4] RAM indicator")
+        log("\n[4] Swapping panes")
+        if let row = controller.testRow(first), row.panes.count == 2 {
+            let (left, right) = (row.panes[0], row.panes[1])
+            let urlsBefore = row.urls
+            controller.swapPanes(nil)   // acts on the selected profile: `first`
+            row.layoutSubtreeIfNeeded()
+            check(row.panes[0] === right && row.panes[1] === left && right.frame.minX < left.frame.minX,
+                  "The two panes trade places (same web views, nothing recreated)")
+            let saved = StateStore.shared.data.profiles.first { $0.name == first }?.panes.map(\.url)
+            check(row.urls == Array(urlsBefore.reversed()) && saved == row.urls, "The new order is saved")
+            controller.swapPanes(nil)
+            row.layoutSubtreeIfNeeded()
+            check(row.panes[0] === left && left.frame.minX < right.frame.minX, "Swapping again restores the order")
+        } else {
+            check(false, "Visible profile has two panes")
+        }
+        if let frozen = controller.testRow(second), !frozen.isAwake {
+            let before = frozen.urls
+            frozen.swapPanes(at: 0)
+            check(frozen.urls == Array(before.reversed()) && !frozen.isAwake,
+                  "A frozen profile can be swapped without waking it")
+            frozen.swapPanes(at: 0)
+        }
+
+        log("\n[5] RAM indicator")
         let report = controller.memoryReport()
         log("   total \(report.totalText) — UI \(MemoryProbe.format(report.app)), GPU \(MemoryProbe.format(report.gpu)), networking \(MemoryProbe.format(report.network))")
         for usage in report.profiles {
@@ -107,7 +131,7 @@ final class UISelfTest: NSObject, NSApplicationDelegate {
             await controller.writeSnapshot(to: URL(fileURLWithPath: args[index + 1]))
         }
 
-        log("\n[5] Clean up")
+        log("\n[6] Clean up")
         let ids = controller.testDestroyAll()
         controller.close()
         for id in ids {

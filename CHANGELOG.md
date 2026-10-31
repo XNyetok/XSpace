@@ -6,6 +6,11 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- Swap the two panes of a profile with the ⇄ button between them, ⌃⌘X, or **Profil → Tukar
+  Posisi Pane**. Pages keep running (nothing reloads), each pane keeps its width, and the new
+  order is saved.
+
 ### Fixed
 - Pane widths went back to equal after a frozen profile was opened again (until the next
   launch).

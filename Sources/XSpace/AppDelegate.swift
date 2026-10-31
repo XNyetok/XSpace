@@ -149,6 +149,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         profilesMenu.addItem(item("Tambah Profil…", #selector(MainWindowController.addProfile(_:)), "n", [.command, .shift], target: controller))
         profilesMenu.addItem(item("Ganti Nama Profil…", #selector(MainWindowController.renameProfile(_:)), "", [], target: controller))
         profilesMenu.addItem(item("Ganti Warna Profil", #selector(MainWindowController.cycleProfileColor(_:)), "", [], target: controller))
+        profilesMenu.addItem(item("Tukar Posisi Pane", #selector(MainWindowController.swapPanes(_:)), "x", [.command, .control], target: controller))
         profilesMenu.addItem(item("Atur Ulang Pane ke Default", #selector(MainWindowController.resetPanes(_:)), "", [], target: controller))
         profilesMenu.addItem(item("Hapus Profil…", #selector(MainWindowController.deleteProfile(_:)), "", [], target: controller))
         profilesMenu.addItem(.separator())

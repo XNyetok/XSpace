@@ -24,7 +24,8 @@ bercampur dan tanpa banyak jendela browser yang tersebar di beberapa Space.
 ## Fitur
 
 - Profil dengan data situs terisolasi penuh (satu `WKWebsiteDataStore(forIdentifier:)` per profil)
-- Pane berdampingan dalam satu profil (default: Google AI Studio | Google Sheets), bisa diubah lebarnya
+- Pane berdampingan dalam satu profil (default: Google AI Studio | Google Sheets), bisa diubah
+  lebarnya dan ditukar posisinya
 - Mode **Fokus** (satu profil) dan **Semua** (semua profil ditumpuk sebagai grid)
 - Warna per profil dan bingkai pane, supaya selalu jelas sedang di akun mana
 - Popup dan jendela login tetap di dalam profilnya
@@ -86,6 +87,7 @@ notarisasi.
 | Muat ulang / kembali / maju | ⌘R / ⌘[ / ⌘] |
 | Zoom pane | ⌘= / ⌘- / ⌘0 |
 | Ubah lebar pane | geser pembatas; klik dua kali = rata lagi |
+| Tukar posisi dua pane | tombol ⇄ di antara pane, ⌃⌘X, atau menu **Profil → Tukar Posisi Pane** |
 | Pemakaian & pengaturan hemat RAM | indikator **RAM …**, atau menu **Tampilan → Hemat RAM** |
 
 ### Hemat RAM

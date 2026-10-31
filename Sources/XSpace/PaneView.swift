@@ -5,6 +5,9 @@ import WebKit
 /// The border uses the profile color so it is always clear which account a pane belongs to.
 @MainActor
 final class PaneView: NSView, WKNavigationDelegate, WKUIDelegate {
+    /// Height of the mini toolbar above the page.
+    static let toolbarHeight: CGFloat = 32
+
     let profile: Profile
     let webView: WKWebView
 
@@ -111,7 +114,8 @@ final class PaneView: NSView, WKNavigationDelegate, WKUIDelegate {
         let bar = NSStackView(views: [dotView, nameLabel, backButton, forwardButton, reloadButton, urlField])
         bar.orientation = .horizontal
         bar.spacing = 6
-        bar.edgeInsets = NSEdgeInsets(top: 0, left: 8, bottom: 0, right: 6)
+        // 8 pt on both sides keeps the controls clear of the swap button between two panes.
+        bar.edgeInsets = NSEdgeInsets(top: 0, left: 8, bottom: 0, right: 8)
         bar.setCustomSpacing(10, after: nameLabel)
         bar.translatesAutoresizingMaskIntoConstraints = false
 
@@ -126,7 +130,7 @@ final class PaneView: NSView, WKNavigationDelegate, WKUIDelegate {
             toolbar.topAnchor.constraint(equalTo: topAnchor),
             toolbar.leadingAnchor.constraint(equalTo: leadingAnchor),
             toolbar.trailingAnchor.constraint(equalTo: trailingAnchor),
-            toolbar.heightAnchor.constraint(equalToConstant: 32),
+            toolbar.heightAnchor.constraint(equalToConstant: Self.toolbarHeight),
 
             bar.leadingAnchor.constraint(equalTo: toolbar.leadingAnchor),
             bar.trailingAnchor.constraint(equalTo: toolbar.trailingAnchor),

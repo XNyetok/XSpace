@@ -22,6 +22,9 @@ final class ProfileRowView: NSView {
         split.onRatiosChanged = { [weak self] ratios in
             self?.onRatiosChanged?(ratios.map { Double($0) })
         }
+        split.onSwapRequested = { [weak self] index in
+            self?.swapPanes(at: index)
+        }
         split.translatesAutoresizingMaskIntoConstraints = false
         addSubview(split)
         NSLayoutConstraint.activate([
@@ -41,12 +44,30 @@ final class ProfileRowView: NSView {
             panes.forEach { $0.reloadIfNeeded() }
             return
         }
-        for (index, urlString) in urls.enumerated() {
+        for urlString in urls {
             let pane = PaneView(profile: profile, configuration: nil, initialURL: URL(string: urlString))
-            pane.onURLChange = { [weak self] url in self?.paneDidNavigate(index: index, url: url) }
+            // The index is looked up when the page navigates, because panes can be swapped.
+            pane.onURLChange = { [weak self, weak pane] url in
+                guard let self, let pane, let index = self.panes.firstIndex(where: { $0 === pane }) else { return }
+                self.paneDidNavigate(index: index, url: url)
+            }
             panes.append(pane)
         }
         split.setPanes(panes)
+    }
+
+    /// Swaps the pane at `index` with the one to its right. The web views move as they are
+    /// (nothing reloads), each pane keeps its width, and the new order is saved. On a frozen row
+    /// the panes come back in the new order.
+    func swapPanes(at index: Int) {
+        guard index >= 0, index + 1 < urls.count else { return }
+        urls.swapAt(index, index + 1)
+        if index + 1 < panes.count { panes.swapAt(index, index + 1) }
+        split.swapPanes(at: index)
+        onURLsChanged?(urls)
+        if split.ratios.count == urls.count {
+            onRatiosChanged?(split.ratios.map { Double($0) })
+        }
     }
 
     /// Destroys the web views (their processes exit, memory is returned) and keeps the last URLs.
@@ -95,13 +116,17 @@ final class ProfileRowView: NSView {
 }
 
 /// Minimal horizontal splitter: pane widths follow ratios (equal by default), dividers can be
-/// dragged, and double-clicking a divider equalizes again. NSSplitView is deliberately not
-/// used: with Auto Layout it overrode divider positions with the panes' minimum widths.
+/// dragged, double-clicking a divider equalizes again, and the round button on each divider
+/// swaps the panes next to it. NSSplitView is deliberately not used: with Auto Layout it
+/// overrode divider positions with the panes' minimum widths.
 @MainActor
 final class PaneSplitView: NSView {
     var ratios: [CGFloat] = []
     var onRatiosChanged: (([CGFloat]) -> Void)?
+    /// Called with the divider's index when its swap button is clicked.
+    var onSwapRequested: ((Int) -> Void)?
     private(set) var panes: [NSView] = []
+    private(set) var swapButtons: [PaneSwapButton] = []
     private var dividers: [PaneDividerView] = []
     private let dividerWidth: CGFloat = 6
     private let minimumPaneWidth: CGFloat = 200
@@ -109,8 +134,10 @@ final class PaneSplitView: NSView {
     func setPanes(_ views: [NSView]) {
         panes.forEach { $0.removeFromSuperview() }
         dividers.forEach { $0.removeFromSuperview() }
+        swapButtons.forEach { $0.removeFromSuperview() }
         panes = views
         dividers = []
+        swapButtons = []
         for view in views {
             view.translatesAutoresizingMaskIntoConstraints = true
             addSubview(view)
@@ -123,9 +150,25 @@ final class PaneSplitView: NSView {
                 addSubview(divider)
                 dividers.append(divider)
             }
+            // Added last so they are drawn above the panes they overlap.
+            for index in 0..<(views.count - 1) {
+                let button = PaneSwapButton()
+                button.owner = self
+                button.index = index
+                addSubview(button)
+                swapButtons.append(button)
+            }
         }
         // A frozen row has no panes: keep its ratios for when the panes come back.
         if !views.isEmpty && ratios.count != views.count { ratios = equalRatios(views.count) }
+        needsLayout = true
+    }
+
+    /// Swaps the pane at `index` with the next one. Each pane keeps its width, and the views
+    /// stay in place in the view hierarchy (only their frames change).
+    func swapPanes(at index: Int) {
+        if index >= 0, index + 1 < panes.count { panes.swapAt(index, index + 1) }
+        if index >= 0, index + 1 < ratios.count { ratios.swapAt(index, index + 1) }
         needsLayout = true
     }
 
@@ -151,6 +194,13 @@ final class PaneSplitView: NSView {
                 dividers[index].frame = NSRect(x: x, y: 0, width: dividerWidth, height: bounds.height)
                 x += dividerWidth
             }
+        }
+        // Each swap button sits on its divider, in the band of the panes' toolbars.
+        let size = PaneSwapButton.size
+        for (index, button) in swapButtons.enumerated() where index < dividers.count {
+            button.frame = NSRect(x: (dividers[index].frame.midX - size / 2).rounded(),
+                                  y: (bounds.height - PaneView.toolbarHeight / 2 - size / 2).rounded(),
+                                  width: size, height: size)
         }
     }
 
@@ -198,6 +248,75 @@ final class PaneDividerView: NSView {
 
     override func mouseUp(with event: NSEvent) {
         owner?.dividerDragEnded()
+    }
+}
+
+/// The small round ⇄ button between two panes: swaps them.
+@MainActor
+final class PaneSwapButton: NSButton {
+    static let size: CGFloat = 20
+
+    weak var owner: PaneSplitView?
+    var index = 0
+    private var hovering = false
+    private var hoverArea: NSTrackingArea?
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        isBordered = false
+        imagePosition = .imageOnly
+        image = NSImage(systemSymbolName: "arrow.left.arrow.right", accessibilityDescription: "Tukar posisi pane")?
+            .withSymbolConfiguration(.init(pointSize: 9, weight: .bold))
+        toolTip = "Tukar posisi pane (⌃⌘X)"
+        setAccessibilityLabel("Tukar posisi pane")
+        wantsLayer = true
+        layer?.cornerRadius = Self.size / 2
+        layer?.borderWidth = 1
+        target = self
+        action = #selector(swapClicked(_:))
+        refreshColors()
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    @objc private func swapClicked(_ sender: Any?) {
+        owner?.onSwapRequested?(index)
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let hoverArea { removeTrackingArea(hoverArea) }
+        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
+                                  owner: self, userInfo: nil)
+        addTrackingArea(area)
+        hoverArea = area
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        hovering = true
+        refreshColors()
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        hovering = false
+        refreshColors()
+    }
+
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: .arrow)   // not the divider's resize cursor
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        refreshColors()
+    }
+
+    private func refreshColors() {
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            self.layer?.backgroundColor = (self.hovering ? NSColor.controlAccentColor : NSColor.windowBackgroundColor).cgColor
+            self.layer?.borderColor = NSColor.separatorColor.cgColor
+        }
+        contentTintColor = hovering ? .white : .secondaryLabelColor
     }
 }
 

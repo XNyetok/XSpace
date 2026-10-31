@@ -56,6 +56,18 @@ final class PaneSplitViewTests: XCTestCase {
         XCTAssertEqual(reported?.count, 2)
     }
 
+    @MainActor
+    func testSwappingPanesKeepsTheirWidths() {
+        let (split, views) = makeSplit(width: 1006, panes: 2, ratios: [0.3, 0.7])
+        split.swapPanes(at: 0)
+        split.layout()
+        XCTAssertTrue(split.panes[0] === views[1] && split.panes[1] === views[0])
+        XCTAssertEqual(views[1].frame, NSRect(x: 0, y: 0, width: 700, height: 300))
+        XCTAssertEqual(views[0].frame, NSRect(x: 706, y: 0, width: 300, height: 300))
+        XCTAssertEqual(split.ratios, [0.7, 0.3])
+        XCTAssertTrue(views.allSatisfy { $0.superview === split }, "the views move; they are not removed")
+    }
+
     /// A frozen row has no panes; its widths must still be there when it is opened again.
     @MainActor
     func testWidthsSurviveFreezing() {
@@ -65,6 +77,22 @@ final class PaneSplitViewTests: XCTestCase {
         split.setPanes(views)
         split.layout()
         XCTAssertEqual(views.map(\.frame.width), [300, 700])
+    }
+
+    @MainActor
+    func testSwapButtonSitsOnTheDividerAndRequestsTheSwap() {
+        let (split, _) = makeSplit(width: 1006, panes: 2)
+        XCTAssertEqual(split.swapButtons.count, 1)
+        let button = split.swapButtons[0]
+        XCTAssertEqual(button.frame.midX, 503)   // the divider spans 500...506
+        XCTAssertEqual(button.frame.maxY, 300 - (PaneView.toolbarHeight - PaneSwapButton.size) / 2,
+                       "centered in the band of the pane toolbars")
+        var requested: Int?
+        split.onSwapRequested = { requested = $0 }
+        button.performClick(nil)
+        XCTAssertEqual(requested, 0)
+        split.setPanes([])
+        XCTAssertTrue(split.swapButtons.isEmpty && button.superview == nil, "a frozen row has no button")
     }
 
     @MainActor
