@@ -6,10 +6,16 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+- Cookies are flushed to disk when the app quits, as a safeguard for sessions created moments
+  before quitting (usually instant, at most 2 s). The quit sequence does not depend on Swift
+  Tasks or the main queue, so it cannot hang.
+
 ### Fixed
-- Cookies are written to disk before the app quits. On macOS 15 (and likely 14), WebKit could
-  otherwise lose a session created shortly before quitting, so the user had to sign in again.
-  The quit sequence does not depend on Swift Tasks or the main queue, so it cannot hang.
+- Persistence self-test on macOS 15: WebKit loads a profile's saved cookies lazily, on the
+  first page that uses the profile, so the cookie store API looked empty right after launch.
+  The test now checks cookies the way pages see them. Cookies were not actually being lost;
+  this was the cause of the first CI failures.
 
 ## [0.3.0] - 2026-10-31
 

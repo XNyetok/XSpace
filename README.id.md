@@ -103,8 +103,8 @@ profil; sesinya tersimpan.
 - Tidak ada JavaScript yang disuntikkan ke halaman.
 - Dua API privat WebKit (SPI) dipakai, keduanya selalu dicek dulu sehingga perubahan macOS di
   masa depan tidak membuat app crash: membaca PID proses WebKit untuk indikator RAM, dan menulis
-  cookie ke disk saat app ditutup (panggilan yang sama dengan Safari), supaya login yang baru
-  dibuat tetap tersimpan setelah restart di macOS versi lama.
+  cookie ke disk saat app ditutup (panggilan yang sama dengan Safari), sebagai pengaman untuk
+  sesi yang baru dibuat sesaat sebelum app ditutup.
 - Laporkan celah keamanan secara privat; lihat [SECURITY.md](SECURITY.md).
 
 ## Pengembangan

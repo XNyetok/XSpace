@@ -103,8 +103,8 @@ sign in once per profile; the session is kept.
 - No JavaScript is injected into pages.
 - Two private WebKit APIs (SPI) are used, both checked before use so a future macOS change
   cannot crash the app: reading WebKit helper process IDs for the RAM indicator, and flushing
-  cookies to disk when quitting (the same call Safari uses), so a fresh sign-in survives a
-  restart on older macOS versions.
+  cookies to disk when quitting (the same call Safari uses), as a safeguard for sessions
+  created moments before quitting.
 - Report vulnerabilities privately; see [SECURITY.md](SECURITY.md).
 
 ## Development

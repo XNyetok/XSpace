@@ -52,8 +52,9 @@ enum WebKitSupport {
     }
 
     /// Asks WebKit to write the cookies of the given stores to disk now, waiting at most
-    /// `timeout` seconds. Older WebKit (macOS 14/15) persists cookies only periodically, so
-    /// quitting right after signing in could lose the session. Uses the SPI
+    /// `timeout` seconds. A safeguard on quit, so a session created moments before quitting is
+    /// on disk. (Note: older WebKit loads saved cookies lazily, on the first page that uses a
+    /// profile, so the cookie store API can look empty right after launch.) Uses the SPI
     /// `-[WKHTTPCookieStore _flushCookiesToDiskWithCompletionHandler:]` (also used by Safari);
     /// it is checked first, and without it this returns immediately.
     @MainActor
