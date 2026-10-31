@@ -153,7 +153,7 @@ final class PaneSplitView: NSView {
         }
     }
 
-    fileprivate func dragDivider(at index: Int, toX proposedX: CGFloat) {
+    func dragDivider(at index: Int, toX proposedX: CGFloat) {
         guard index + 1 < panes.count else { return }
         let start = panes[index].frame.minX
         let end = panes[index + 1].frame.maxX
@@ -167,7 +167,7 @@ final class PaneSplitView: NSView {
         needsLayout = true
     }
 
-    fileprivate func dividerDragEnded() {
+    func dividerDragEnded() {
         onRatiosChanged?(ratios)
     }
 
