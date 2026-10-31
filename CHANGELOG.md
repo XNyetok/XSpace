@@ -14,6 +14,7 @@ All notable changes to this project are documented here. The format follows
 ### Fixed
 - Pane widths went back to equal after a frozen profile was opened again (until the next
   launch).
+- The RAM indicator in the toolbar touched the Fokus/Semua switch; they are now apart.
 
 ## [0.3.1] - 2026-10-31
 

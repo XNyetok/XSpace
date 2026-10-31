@@ -375,7 +375,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
     // MARK: Toolbar
 
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [ToolbarID.profiles, ToolbarID.add, ToolbarID.more, .flexibleSpace, ToolbarID.memory, ToolbarID.mode]
+        // The space keeps the RAM indicator from touching the Focus/All switch.
+        [ToolbarID.profiles, ToolbarID.add, ToolbarID.more, .flexibleSpace, ToolbarID.memory, .space, ToolbarID.mode]
     }
 
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
