@@ -37,5 +37,5 @@ prefer otherwise.
 - App Sandbox + Hardened Runtime; entitlements are listed in `Support/XSpace.entitlements`.
 - No telemetry, no remote logging, no third-party dependencies, no JavaScript injected into pages.
 - Non-web URL schemes (`mailto:`, ...) are handed to macOS only after a user click.
-- Private WebKit API usage is limited to reading helper process IDs for the RAM indicator, and
-  is checked with `responds(to:)` before use.
+- Private WebKit API usage is limited to reading helper process IDs (RAM indicator) and
+  flushing cookies to disk when quitting; both are checked with `responds(to:)` before use.

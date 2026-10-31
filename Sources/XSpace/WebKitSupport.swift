@@ -51,6 +51,76 @@ enum WebKitSupport {
         return false
     }
 
+    /// Asks WebKit to write the cookies of the given stores to disk now, waiting at most
+    /// `timeout` seconds. Older WebKit (macOS 14/15) persists cookies only periodically, so
+    /// quitting right after signing in could lose the session. Uses the SPI
+    /// `-[WKHTTPCookieStore _flushCookiesToDiskWithCompletionHandler:]` (also used by Safari);
+    /// it is checked first, and without it this returns immediately.
+    @MainActor
+    static func flushCookies(_ stores: [WKWebsiteDataStore], timeout: TimeInterval = 2) async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            flushCookies(stores, timeout: timeout) { continuation.resume() }
+        }
+    }
+
+    private static let flushSelector = NSSelectorFromString("_flushCookiesToDiskWithCompletionHandler:")
+
+    /// Whether this WebKit offers the cookie flush SPI.
+    @MainActor
+    static var canFlushCookies: Bool {
+        WKWebsiteDataStore.nonPersistent().httpCookieStore.responds(to: flushSelector)
+    }
+
+    /// Callback form, safe to use while AppKit waits for `applicationShouldTerminate` in a nested
+    /// run loop: it relies only on WebKit callbacks and a run-loop timer, never on Swift
+    /// concurrency or the main dispatch queue (which may be blocked at that moment).
+    /// `completion` is called exactly once, asynchronously, on the main thread.
+    @MainActor
+    static func flushCookies(_ stores: [WKWebsiteDataStore], timeout: TimeInterval = 2,
+                             completion: @escaping @MainActor () -> Void) {
+        let cookieStores = stores.map(\.httpCookieStore).filter { $0.responds(to: flushSelector) }
+        let waiter = FlushWaiter(remaining: cookieStores.count, completion: completion)
+        // The block is stored by WebKit and called later, so it must be declared escaping;
+        // otherwise the Swift runtime traps ("closure ... passed as @noescape ... has escaped").
+        typealias FlushFunction = @convention(c) (AnyObject, Selector, @escaping @convention(block) () -> Void) -> Void
+        for store in cookieStores {
+            let flush = unsafeBitCast(store.method(for: flushSelector), to: FlushFunction.self)
+            flush(store, flushSelector) {
+                RunLoop.main.perform { MainActor.assumeIsolated { waiter.oneDone() } }
+            }
+        }
+        let timer = Timer(timeInterval: cookieStores.isEmpty ? 0 : timeout, repeats: false) { _ in
+            MainActor.assumeIsolated { waiter.finish() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        waiter.timer = timer
+    }
+
+    @MainActor
+    private final class FlushWaiter {
+        private var remaining: Int
+        private var completion: (@MainActor () -> Void)?
+        var timer: Timer?
+
+        init(remaining: Int, completion: @escaping @MainActor () -> Void) {
+            self.remaining = remaining
+            self.completion = completion
+        }
+
+        func oneDone() {
+            remaining -= 1
+            if remaining <= 0 { finish() }
+        }
+
+        func finish() {
+            timer?.invalidate()
+            timer = nil
+            let completion = self.completion
+            self.completion = nil
+            completion?()
+        }
+    }
+
     /// Configuration for a new pane. RULE: always use the profile's own data store,
     /// never WKWebsiteDataStore.default().
     @MainActor

@@ -6,6 +6,11 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+- Cookies are written to disk before the app quits. On macOS 15 (and likely 14), WebKit could
+  otherwise lose a session created shortly before quitting, so the user had to sign in again.
+  The quit sequence does not depend on Swift Tasks or the main queue, so it cannot hang.
+
 ## [0.3.0] - 2026-10-31
 
 ### Added

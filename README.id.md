@@ -101,8 +101,10 @@ profil; sesinya tersimpan.
 - Tanpa telemetri, analitik, atau crash reporting. Tidak ada request jaringan selain halaman yang
   kamu buka.
 - Tidak ada JavaScript yang disuntikkan ke halaman.
-- Satu-satunya API privat WebKit (SPI) yang dipakai hanya untuk membaca PID proses WebKit demi
-  indikator RAM; selalu dicek dulu, jadi perubahan macOS di masa depan tidak membuat app crash.
+- Dua API privat WebKit (SPI) dipakai, keduanya selalu dicek dulu sehingga perubahan macOS di
+  masa depan tidak membuat app crash: membaca PID proses WebKit untuk indikator RAM, dan menulis
+  cookie ke disk saat app ditutup (panggilan yang sama dengan Safari), supaya login yang baru
+  dibuat tetap tersimpan setelah restart di macOS versi lama.
 - Laporkan celah keamanan secara privat; lihat [SECURITY.md](SECURITY.md).
 
 ## Pengembangan

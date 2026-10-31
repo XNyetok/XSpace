@@ -133,7 +133,12 @@ final class SelfTest: NSObject, NSApplicationDelegate {
             check(await WebKitSupport.removeDataStore(id), "Test profile \(id.uuidString.prefix(8))… deleted")
         }
 
-        // Give WebKit time to flush cookies/localStorage to disk before the process ends.
+        // Same as quitting the app: flush cookies explicitly, then give WebKit a moment to
+        // write localStorage before the process ends.
+        let flushStart = Date()
+        await WebKitSupport.flushCookies([persistStore])
+        let flushMilliseconds = Int(Date().timeIntervalSince(flushStart) * 1000)
+        log("   Cookie flush: \(flushMilliseconds) ms (\(WebKitSupport.canFlushCookies ? "WebKit SPI" : "SPI missing, timeout only"))")
         try? await Task.sleep(nanoseconds: 3_000_000_000)
         withExtendedLifetime(persistWeb) {}
     }

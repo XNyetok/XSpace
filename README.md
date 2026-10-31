@@ -101,8 +101,10 @@ sign in once per profile; the session is kept.
   `~/Library/Containers/io.github.xnyetok.xspace/`.
 - No telemetry, analytics or crash reporting. No network requests besides the pages you open.
 - No JavaScript is injected into pages.
-- The only private WebKit API (SPI) used is reading WebKit helper process IDs for the RAM
-  indicator; it is checked before use, so a future macOS change cannot crash the app.
+- Two private WebKit APIs (SPI) are used, both checked before use so a future macOS change
+  cannot crash the app: reading WebKit helper process IDs for the RAM indicator, and flushing
+  cookies to disk when quitting (the same call Safari uses), so a fresh sign-in survives a
+  restart on older macOS versions.
 - Report vulnerabilities privately; see [SECURITY.md](SECURITY.md).
 
 ## Development

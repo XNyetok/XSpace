@@ -38,6 +38,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return true
     }
 
+    private var isFlushingBeforeQuit = false
+
+    /// Before quitting, save the layout and make WebKit write every profile's cookies to disk,
+    /// so a session created moments ago survives the restart.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard let controller, !isFlushingBeforeQuit else { return .terminateNow }
+        controller.persistAll()
+        guard WebKitSupport.canFlushCookies, !controller.profiles.isEmpty else { return .terminateNow }
+        isFlushingBeforeQuit = true
+        // Callback based on purpose: AppKit now waits in a nested run loop, where Swift Tasks
+        // and main-queue blocks may not run (e.g. when terminate was called from a Task).
+        WebKitSupport.flushCookies(controller.profiles.map(\.store)) {
+            NSApp.reply(toApplicationShouldTerminate: true)
+        }
+        return .terminateLater
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         controller?.persistAll()
         StateStore.shared.save()
