@@ -39,17 +39,26 @@ final class UISelfTest: NSObject, NSApplicationDelegate {
         check(rowHidden(controller, first) && paneCount(controller, first) == 2,
               "Hidden profile stays alive until memory runs low")
 
-        if let pane = controller.testRow(first)?.panes.first,
-           let pid = MemoryProbe.pid(of: pane.webView, "_webProcessIdentifier") {
-            if kill(pid, SIGKILL) == 0 {
-                await pause(2)
-                check(pane.needsReloadWhenVisible && !pane.webView.isLoading,
-                      "A hidden pane whose process died is not reloaded in the background")
-            } else {
-                log("  SKIP  Killing the page process is not permitted here (errno \(errno))")
+        if let pane = controller.testRow(first)?.panes.first {
+            // Kill the page process for real when allowed (unsandboxed builds). The App Sandbox
+            // does not allow it, so there WebKit's termination callback is delivered directly.
+            let pid = MemoryProbe.pid(of: pane.webView, "_webProcessIdentifier")
+            let killed = pid.map { kill($0, SIGKILL) == 0 } ?? false
+            if !killed {
+                pane.webViewWebContentProcessDidTerminate(pane.webView)
             }
+            await pause(2)
+            // The flag means XSpace chose "reload later" over reloading now. After a real kill the
+            // page must also not be loading again; when simulated, the page is still alive and may
+            // be busy loading on its own, so that part is only checked for a real kill.
+            check(pane.needsReloadWhenVisible && (!killed || !pane.webView.isLoading),
+                  "A hidden pane whose process died is not reloaded in the background (\(killed ? "process killed" : "simulated"))")
+            controller.testSelect(first)
+            check(!pane.needsReloadWhenVisible, "That pane is reloaded once it is shown again")
+            controller.testSelect(second)
+            await pause(2)
         } else {
-            log("  SKIP  Page process ID not available")
+            check(false, "Hidden profile has panes")
         }
 
         controller.handleMemoryPressure(.warning)
