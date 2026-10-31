@@ -13,3 +13,6 @@ build/
 .vscode/
 .idea/
 .DS_Store
+
+# Claude Code: personal, per-project notes
+CLAUDE.local.md
