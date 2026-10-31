@@ -121,7 +121,11 @@ final class SelfTest: NSObject, NSApplicationDelegate {
         persistWeb.loadHTMLString(Self.testHTML, baseURL: Self.testBase)
         _ = await waitUntilLoaded(persistWeb)
         let wrote = await js(persistWeb, "localStorage.setItem('xspace_persist', 'ok'); return localStorage.getItem('xspace_persist')")
-        check(wrote == "ok", "Test data written (run --selftest-persist next to read it back)")
+        let writtenPageCookie = await js(persistWeb, "return document.cookie")
+        let writtenStoreCookies = await persistStore.httpCookieStore.allCookies().map(\.name)
+        log("   before quitting — document.cookie: \"\(writtenPageCookie)\", cookie store: \(writtenStoreCookies)")
+        check(wrote == "ok" && writtenPageCookie.contains("xspace_persist=ok"),
+              "Test data written (run --selftest-persist next to read it back)")
 
         // [4] Clean up test profiles A and B
         log("\n[4] Deleting test profiles A and B")
@@ -151,11 +155,20 @@ final class SelfTest: NSObject, NSApplicationDelegate {
         let ids = await WKWebsiteDataStore.allDataStoreIdentifiers
         check(ids.contains(Self.persistID), "Test profile still exists after the app quit")
         var store: WKWebsiteDataStore? = WKWebsiteDataStore(forIdentifier: Self.persistID)
-        let cookies = await store!.httpCookieStore.allCookies()
-        check(cookies.contains { $0.name == "xspace_persist" }, "Cookie survives a restart")
+        // What matters to users is what pages see after a restart, so read the cookie from the
+        // page; the cookie store API is logged before and after loading a page for diagnostics
+        // (older WebKit may load the persisted cookie file only once a page uses the store).
+        let storeBefore = await store!.httpCookieStore.allCookies().map(\.name)
         var web: WKWebView? = makeWebView(store!)
         web!.loadHTMLString(Self.testHTML, baseURL: Self.testBase)
         _ = await waitUntilLoaded(web!)
+        let pageCookie = await js(web!, "return document.cookie")
+        let storeAfter = await store!.httpCookieStore.allCookies().map(\.name)
+        log("   cookie store before page load: \(storeBefore); after: \(storeAfter); document.cookie: \"\(pageCookie)\"")
+        check(pageCookie.contains("xspace_persist=ok"), "Cookie survives a restart (as seen by the page)")
+        if !storeBefore.contains("xspace_persist") && storeAfter.contains("xspace_persist") {
+            log("   note: this WebKit loads persisted cookies lazily, on first use of the profile")
+        }
         let value = await js(web!, "return String(localStorage.getItem('xspace_persist'))")
         check(value == "ok", "localStorage survives a restart (value: \(value))")
 
