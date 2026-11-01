@@ -175,13 +175,17 @@ final class PaneView: NSView, WKNavigationDelegate, WKUIDelegate {
         configure(forwardButton, symbol: "chevron.right", tip: "Maju (⌘])", action: #selector(forwardPane(_:)))
         configure(reloadButton, symbol: "arrow.clockwise", tip: "Muat ulang (⌘R)", action: #selector(reloadOrStop(_:)))
         configure(homeButton, symbol: "house", tip: "Halaman awal (⇧⌘H)", action: #selector(homePane(_:)))
-        configure(zoomOutButton, symbol: "minus.magnifyingglass", tip: "Perkecil (⌘-)", action: #selector(zoomOutPane(_:)))
-        configure(zoomInButton, symbol: "plus.magnifyingglass", tip: "Perbesar (⌘=)", action: #selector(zoomInPane(_:)))
+        // A small, plain − and +, so that the zoom between them is what you see.
+        let small = NSImage.SymbolConfiguration(pointSize: 10, weight: .semibold)
+        configure(zoomOutButton, symbol: "minus", tip: "Perkecil (⌘-)", action: #selector(zoomOutPane(_:)),
+                  width: 18, symbolConfiguration: small)
+        configure(zoomInButton, symbol: "plus", tip: "Perbesar (⌘=)", action: #selector(zoomInPane(_:)),
+                  width: 18, symbolConfiguration: small)
         zoomButton.isBordered = false
         zoomButton.target = self
         zoomButton.action = #selector(resetZoomPane(_:))
         zoomButton.translatesAutoresizingMaskIntoConstraints = false
-        zoomButton.widthAnchor.constraint(equalToConstant: 36).isActive = true
+        zoomButton.widthAnchor.constraint(equalToConstant: 34).isActive = true
         zoomControls.setViews([zoomOutButton, zoomButton, zoomInButton], in: .leading)
         zoomControls.spacing = 0
         zoomControls.isHidden = true   // until the pane is wide enough (see setFrameSize)
@@ -309,8 +313,10 @@ final class PaneView: NSView, WKNavigationDelegate, WKUIDelegate {
         startPage.show(shortcuts: shortcutsProvider?() ?? [], editable: onEditShortcuts != nil)
     }
 
-    private func configure(_ button: NSButton, symbol: String, tip: String, action: Selector) {
-        button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: tip)
+    private func configure(_ button: NSButton, symbol: String, tip: String, action: Selector, width: CGFloat = 22,
+                           symbolConfiguration: NSImage.SymbolConfiguration? = nil) {
+        let image = NSImage(systemSymbolName: symbol, accessibilityDescription: tip)
+        button.image = symbolConfiguration.flatMap { image?.withSymbolConfiguration($0) } ?? image
         button.isBordered = false
         button.imagePosition = .imageOnly
         button.contentTintColor = .secondaryLabelColor
@@ -318,7 +324,7 @@ final class PaneView: NSView, WKNavigationDelegate, WKUIDelegate {
         button.target = self
         button.action = action
         button.translatesAutoresizingMaskIntoConstraints = false
-        button.widthAnchor.constraint(equalToConstant: 22).isActive = true
+        button.widthAnchor.constraint(equalToConstant: width).isActive = true
     }
 
     func refreshProfileAppearance() {
