@@ -167,7 +167,11 @@ Indonesia atau Inggris.
 ## Rencana
 
 - UI bahasa Inggris dan lokalisasi yang rapi (Indonesia + Inggris)
-- Layout fleksibel: jumlah pane per profil, preset per workspace
+- Layout fleksibel dengan ruang kerja (workspace), yang menggantikan daftar profil di toolbar:
+  - pane dalam baris dan kolom, misalnya satu pane tinggi di kiri dan tiga bertumpuk di kanan
+  - profil apa pun di pane mana pun, jadi satu ruang kerja bisa menampilkan beberapa akun sekaligus
+  - preset seperti 2 kolom, 2×2, dan 1 + 3
+  - profil yang sudah ada otomatis menjadi ruang kerja dengan pane yang sama
 - Rilis yang ditandatangani Developer ID dan dinotarisasi (saat ini rilis masih ad-hoc)
 - Proxy per profil (opsional)
 - Notifikasi web diteruskan ke notifikasi macOS

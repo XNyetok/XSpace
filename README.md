@@ -165,7 +165,11 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
 ## Roadmap
 
 - English UI and proper localization (Indonesian + English)
-- Flexible layouts: number of panes per profile, presets per workspace
+- Flexible layouts with workspaces, which replace the profile list in the toolbar:
+  - panes in rows and columns, for example one tall pane on the left and three stacked on the right
+  - any profile in any pane, so one workspace can show several accounts side by side
+  - presets such as 2 columns, 2×2 and 1 + 3
+  - existing profiles automatically become workspaces with the same panes
 - Notarized releases signed with a Developer ID (releases are ad-hoc signed for now)
 - Optional per-profile proxy
 - Web notifications bridged to macOS notifications
