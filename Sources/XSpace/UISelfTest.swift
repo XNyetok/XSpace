@@ -4,11 +4,11 @@ import WebKit
 
 /// `XSpace --selftest-ui [shot.png]`: runs the real XSpace window with THROWAWAY state
 /// (temporary folder + new test profiles), checks upgrading from 0.5.0, freezing, the layouts and
-/// the zoom, showing and swapping profiles, the keyboard focus, the RAM indicator, deleting a
-/// profile and the first start (welcome screen, start pages, shortcuts, Beranda, deleting the last
-/// profile), then deletes everything. Real profiles are never touched. With a .png argument it also saves
-/// snapshots: shot.png of the 1 + 3 layout, shot-welcome.png of the welcome screen and
-/// shot-start.png of the start pages.
+/// the zoom, showing and swapping profiles, the keyboard focus, the RAM indicator, new tabs and
+/// popups, deleting a profile and the first start (welcome screen, start pages, shortcuts,
+/// Beranda, deleting the last profile), then deletes everything. Real profiles are never touched.
+/// With a .png argument it also saves snapshots: shot.png of the 1 + 3 layout, shot-welcome.png
+/// of the welcome screen and shot-start.png of the start pages.
 @MainActor
 final class UISelfTest: NSObject, NSApplicationDelegate {
     private static let aiStudio = "https://aistudio.google.com/"
@@ -139,7 +139,10 @@ final class UISelfTest: NSObject, NSApplicationDelegate {
             await controller.writeSnapshot(to: shot)
         }
 
-        log("\n[7] Deleting a profile")
+        log("\n[7] New tabs and popups")
+        await checkNewTabs(controller)
+
+        log("\n[8] Deleting a profile")
         // Uji 5 is shown and has the keyboard focus, as when you delete the profile you are in.
         // Only its ID is kept here: holding the Profile would keep its data store alive.
         let fifth = controller.profiles.first { $0.name == "Uji 5" }?.id ?? UUID()
@@ -166,7 +169,7 @@ final class UISelfTest: NSObject, NSApplicationDelegate {
             check(!queued && !stores.contains(fifth), "Deleting a profile deletes its data store right away (\(seconds) s)")
         }
 
-        // The data stores of the test profiles are deleted at the end ([9]).
+        // The data stores of the test profiles are deleted at the end ([10]).
         var removals = controller.profiles.map { DataStoreRemoval($0.store) }
         // The deleted profile's store is still there if WebKit held it (see the note above) or if
         // the checks above failed. It belongs to the throwaway state, so it must not stay behind.
@@ -174,16 +177,16 @@ final class UISelfTest: NSObject, NSApplicationDelegate {
         controller.testDestroyAll()
         controller.close()
 
-        log("\n[8] First start: welcome screen and start pages")
+        log("\n[9] First start: welcome screen and start pages")
         removals += await checkFirstStart()
 
-        log("\n[9] Clean up")
+        log("\n[10] Clean up")
         for removal in removals {
             await checkRemoval(removal, "Test profile \(removal.shortID)… deleted")
         }
     }
 
-    /// [8]: a window without saved state shows the welcome screen and makes no profile; choosing a
+    /// [9]: a window without saved state shows the welcome screen and makes no profile; choosing a
     /// layout there makes a profile for each pane, every one on its start page; typing an address
     /// opens it; deleting the last profile brings the welcome screen back. Returns the removals of
     /// the data stores of the profiles it made.
@@ -234,7 +237,7 @@ final class UISelfTest: NSObject, NSApplicationDelegate {
         guard await checkStartPages(controller, names: names) else { return finish() }
 
         // Deleting every profile, the last one included, brings the welcome screen back. The app
-        // deletes their data stores; [9] checks that they are gone.
+        // deletes their data stores; [10] checks that they are gone.
         let removals = controller.profiles.map { DataStoreRemoval($0.store) }
         for id in controller.profiles.map(\.id) {
             await controller.testDelete(id)
@@ -246,7 +249,7 @@ final class UISelfTest: NSObject, NSApplicationDelegate {
         return removals
     }
 
-    /// [8], continued: the panes of 2 × 2 on their start pages, the keyboard focus, shortcuts for every
+    /// [9], continued: the panes of 2 × 2 on their start pages, the keyboard focus, shortcuts for every
     /// profile, an address typed in one pane and a shortcut clicked in another, Beranda and Kembali,
     /// and removing a shortcut. False if a pane is missing.
     private func checkStartPages(_ controller: MainWindowController, names: [String]) async -> Bool {
@@ -514,6 +517,34 @@ final class UISelfTest: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// [7]: a page that asks for a new tab gets a note in its pane and no window; one that asks for a
+    /// popup window with a size of its own, as sign-in windows do, gets the window, in its profile.
+    /// The pages are the test's own, in the pane of Uji 1.
+    private func checkNewTabs(_ controller: MainWindowController) async {
+        guard let pane = controller.testPane("Uji 1") else { return check(false, "Uji 1 is shown") }
+        let id = pane.profile.id
+        func open(_ script: String) async {
+            pane.testHideNote()
+            pane.webView.loadHTMLString("<a id=link href='https://example.com/' target='_blank'>link</a>"
+                                        + "<script>\(script)</script>", baseURL: nil)
+            let deadline = Date().addingTimeInterval(3)
+            while pane.testNote == nil && PopupWindowController.webViews(for: id).isEmpty && Date() < deadline {
+                await pause(0.1)
+            }
+        }
+        await open("document.getElementById('link').click()")
+        check(pane.testNote == PaneView.newTabNote && PopupWindowController.webViews(for: id).isEmpty,
+              "A link with target=\"_blank\" opens no window; the pane says that new tabs are not supported")
+        await open("window.open('https://example.com/')")
+        check(pane.testNote == PaneView.newTabNote && PopupWindowController.webViews(for: id).isEmpty,
+              "window.open without a size opens no window either")
+        await open("window.open('about:blank', 'xspace-test', 'width=400,height=300')")
+        let popups = PopupWindowController.webViews(for: id)
+        check(popups.count == 1 && pane.testNote == nil && popups.first?.configuration.websiteDataStore === pane.profile.store,
+              "A popup window with a size of its own, as sign-in windows have, opens in its profile")
+        PopupWindowController.closeAll(for: id)
+    }
+
     /// [5]: the keyboard focus never stays in a page that is not on screen. Layout 1 + 3 with
     /// Uji 5 hidden; afterwards Uji 5 is shown instead of Uji 4.
     private func checkKeyboardFocus(_ controller: MainWindowController) {
@@ -598,7 +629,7 @@ final class UISelfTest: NSObject, NSApplicationDelegate {
     }
 }
 
-/// Watches a profile while it is deleted (see [7]) without keeping anything alive: weak references
+/// Watches a profile while it is deleted (see [8]) without keeping anything alive: weak references
 /// to XSpace's objects and the data store, and the PID of the pane's page process.
 @MainActor
 private final class DeletionWatch {
@@ -607,7 +638,7 @@ private final class DeletionWatch {
         init(_ object: AnyObject) { self.object = object }
     }
 
-    /// Deletes the store if the app could not (see [9]).
+    /// Deletes the store if the app could not (see [10]).
     let removal: DataStoreRemoval
     private let xspaceObjects: [(name: String, box: WeakBox)]
     private let store: WeakBox

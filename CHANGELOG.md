@@ -36,6 +36,10 @@ All notable changes to this project are documented here. The format follows
 - ⌘= and ⌘- zoom the pane you are in from its automatic zoom, in steps of 10%, and the profile
   keeps its zoom, also when it is frozen and after quitting. ⌘0, now **Atur Ulang Zoom** (formerly
   **Ukuran Asli**), goes back to the automatic zoom.
+- A link or page that opens a new tab (a link with `target="_blank"`, `window.open` without a size,
+  **Open Link in New Window**) no longer opens a popup window: XSpace has no tabs yet, and a short
+  note at the bottom of the pane says so. Popup windows with a size of their own, such as sign-in
+  windows, still open in their profile.
 
 ## [0.6.0] - 2026-11-01
 

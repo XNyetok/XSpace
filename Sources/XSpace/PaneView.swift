@@ -14,6 +14,8 @@ final class PaneView: NSView, WKNavigationDelegate, WKUIDelegate {
     /// The hint in an empty address field (and in the start page's search box), as in browsers:
     /// what is not an address is searched for with Google (see resolve).
     static let addressPlaceholder = "Telusuri Google atau ketik URL"
+    /// The note a pane shows when a page asks for a new tab.
+    static let newTabNote = "Membuka tab baru belum didukung"
 
     let profile: Profile
     let webView: WKWebView
@@ -71,6 +73,8 @@ final class PaneView: NSView, WKNavigationDelegate, WKUIDelegate {
     private(set) var needsReloadWhenVisible = false
     /// Shown over the page while the pane has no page yet, or after Beranda; nil otherwise.
     private var startPage: StartPageView?
+    /// A short note at the bottom of the pane, such as that new tabs are not supported.
+    private let noteView = PaneNoteView()
     /// Waits for the mouse button to be released before the zoom follows a new size (see
     /// setFrameSize).
     private var zoomTimer: Timer?
@@ -218,6 +222,8 @@ final class PaneView: NSView, WKNavigationDelegate, WKUIDelegate {
         toolbar.addSubview(progressBar)
         addSubview(toolbar)
         addSubview(webView)
+        noteView.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(noteView)
 
         let progressWidth = progressBar.widthAnchor.constraint(equalToConstant: 0)
         self.progressWidth = progressWidth
@@ -243,6 +249,10 @@ final class PaneView: NSView, WKNavigationDelegate, WKUIDelegate {
             webView.leadingAnchor.constraint(equalTo: leadingAnchor),
             webView.trailingAnchor.constraint(equalTo: trailingAnchor),
             webView.bottomAnchor.constraint(equalTo: bottomAnchor),
+
+            noteView.centerXAnchor.constraint(equalTo: centerXAnchor),
+            noteView.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -14),
+            noteView.widthAnchor.constraint(lessThanOrEqualTo: widthAnchor, constant: -32),
         ])
         syncZoomControls()
     }
@@ -446,6 +456,15 @@ final class PaneView: NSView, WKNavigationDelegate, WKUIDelegate {
     }
 
     // MARK: Hooks for the automated UI test (--selftest-ui)
+
+    /// The note at the bottom of the pane, while one is shown.
+    var testNote: String? {
+        noteView.shownText
+    }
+
+    func testHideNote() {
+        noteView.hide()
+    }
 
     /// The page's zoom, in percent.
     var testZoom: Int {
@@ -736,8 +755,15 @@ final class PaneView: NSView, WKNavigationDelegate, WKUIDelegate {
                  createWebViewWith configuration: WKWebViewConfiguration,
                  for navigationAction: WKNavigationAction,
                  windowFeatures: WKWindowFeatures) -> WKWebView? {
-        // IMPORTANT: use WebKit's `configuration` as is, so the popup (sign-in, "open in new
-        // tab", ...) keeps the same profile data store and the window.opener relationship.
+        // XSpace has no tabs yet: a link or page that asks for a new tab (target="_blank",
+        // window.open without a size, Open Link in New Window) gets a note at the bottom of the
+        // pane instead of a window. Popup windows, such as sign-in windows, still open.
+        guard PopupWindowController.isPopupWindow(windowFeatures) else {
+            noteView.show(Self.newTabNote)
+            return nil
+        }
+        // IMPORTANT: use WebKit's `configuration` as is, so the popup (a sign-in window, ...) keeps
+        // the same profile data store and the window.opener relationship.
         let popup = PopupWindowController(profile: profile, configuration: configuration,
                                           features: windowFeatures, relativeTo: window)
         popup.showWindow(nil)

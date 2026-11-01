@@ -33,7 +33,8 @@ mixing and without a pile of browser windows spread across Spaces.
 - A welcome screen to choose the layout on the first start, and a start page like a browser's new
   tab page, with shortcuts to your sites: nothing loads before you open a page
 - Color-coded profiles and pane borders, so you always know which account you are in
-- Popups and sign-in windows stay inside their profile
+- Sign-in popups stay inside their profile. There are no tabs yet: a link that opens a new tab
+  shows a short note in its pane instead
 - Memory saving: lazy loading, automatic freezing of hidden profiles, RAM indicator
 - Downloads, file uploads, camera/microphone prompts, page zoom, back/forward
 - App Sandbox + Hardened Runtime, no telemetry, no third-party dependencies
@@ -94,6 +95,7 @@ that. Developer ID signatures also get the secure timestamp that notarization re
 | Rename, recolor or delete a profile | **⋯** button or the **Profil** menu; deleting the last one brings back the welcome screen |
 | Address bar of the focused pane | ⌘L |
 | Reload / back / forward | ⌘R / ⌘[ / ⌘] |
+| A link that opens a new tab | not supported yet: the pane shows a short note at its bottom instead. Popup windows with a size of their own, such as sign-in windows, still open |
 | Zoom a pane | automatic (see [Zoom](#zoom)); **+** / **−** at the right of a pane's toolbar, or ⌘= / ⌘- in the pane you are in, zoom that pane further in or out; click its zoom, or press ⌘0, to go back to the automatic zoom |
 | Resize panes | drag the divider; double-click it to equalize; ⌃⌘0 (**Tampilan → Atur Ulang Ukuran Pane**, also at the bottom of the **Tata Letak** menu) gives the panes of the layout their default sizes again |
 | Memory usage and saving | the **RAM …** indicator, or **Tampilan → Hemat RAM** |
@@ -169,8 +171,8 @@ $APP --selftest            # profile isolation, Google pages, User-Agent, persis
 $APP --selftest-persist    # persistence (read back) + cleanup
 $APP --selftest-ui         # real window with throwaway state: upgrading from 0.5.0, freezing,
                            # layouts and zoom, showing and swapping profiles, keyboard focus,
-                           # RAM indicator, deleting a profile, first start (welcome screen,
-                           # start pages, shortcuts)
+                           # RAM indicator, new tabs and popups, deleting a profile, first start
+                           # (welcome screen, start pages, shortcuts)
 ```
 
 All self-tests use their own throwaway profiles and never touch your real ones. Set
@@ -185,13 +187,14 @@ All self-tests use their own throwaway profiles and never touch your real ones. 
 | `Sources/XSpace/WebKitSupport.swift` | web view configuration, Safari User-Agent, deleting data stores, downloads, error page |
 | `Sources/XSpace/PaneView.swift` | one pane: mini toolbar + `WKWebView` + navigation/UI delegates |
 | `Sources/XSpace/PageZoom.swift` | the zoom of a pane's page: automatic from the size of the pane, plus the profile's own |
+| `Sources/XSpace/PaneNoteView.swift` | the short note at the bottom of a pane, such as that new tabs are not supported |
 | `Sources/XSpace/StartPageView.swift` | a pane's start page, like a browser's new tab page: search box and shortcuts |
 | `Sources/XSpace/WelcomeView.swift` | the welcome screen on the first start: choosing a layout |
 | `Sources/XSpace/GridView.swift` | the panes in the slots of the layout, hidden panes, empty slots, layout icons and pictures |
 | `Sources/XSpace/PaneSplitView.swift` | pane splitter: side by side or stacked, nested, swap button |
 | `Sources/XSpace/MainWindowController.swift` | main window, toolbar, profiles and layouts, memory saving |
 | `Sources/XSpace/MemoryMonitor.swift` | memory measurement and macOS memory-pressure watcher |
-| `Sources/XSpace/PopupWindowController.swift` | popups that stay in their profile |
+| `Sources/XSpace/PopupWindowController.swift` | popup windows that stay in their profile, and what counts as one (not a new tab) |
 | `Sources/XSpace/AppDelegate.swift` | menus and app lifecycle |
 | `Sources/XSpace/SelfTest.swift`, `UISelfTest.swift` | self-tests |
 | `Tests/XSpaceTests/` | unit tests (`swift test`) |

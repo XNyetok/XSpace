@@ -32,7 +32,8 @@ saling bercampur dan tanpa banyak jendela browser yang tersebar di beberapa Spac
 - Layar sambutan untuk memilih tata letak saat pertama dibuka, dan halaman awal seperti tab baru
   di browser, dengan pintasan ke situs-situsmu: tidak ada yang dimuat sebelum kamu membuka halaman
 - Warna per profil dan bingkai pane, supaya selalu jelas sedang di akun mana
-- Popup dan jendela login tetap di dalam profilnya
+- Popup login tetap di dalam profilnya. Belum ada tab: tautan yang membuka tab baru menampilkan
+  catatan singkat di panenya
 - Hemat RAM: lazy load, pembekuan otomatis profil tersembunyi, indikator RAM
 - Unduhan, upload file, izin kamera/mikrofon, zoom halaman, back/forward
 - App Sandbox + Hardened Runtime, tanpa telemetri, tanpa dependensi pihak ketiga
@@ -94,6 +95,7 @@ notarisasi.
 | Ganti nama/warna atau hapus profil | tombol **⋯** atau menu **Profil**; menghapus profil terakhir memunculkan layar sambutan lagi |
 | Kolom alamat pane aktif | ⌘L |
 | Muat ulang / kembali / maju | ⌘R / ⌘[ / ⌘] |
+| Tautan yang membuka tab baru | belum didukung: pane menampilkan catatan singkat di bagian bawahnya. Jendela popup yang punya ukuran sendiri, seperti jendela login, tetap terbuka |
 | Zoom pane | otomatis (lihat [Zoom](#zoom)); **+** / **−** di kanan toolbar pane, atau ⌘= / ⌘- di pane yang aktif, memperbesar atau memperkecil pane itu dari situ; klik angka zoom-nya, atau tekan ⌘0, untuk kembali ke zoom otomatis |
 | Ubah ukuran pane | geser pembatas; klik dua kali = rata lagi; ⌃⌘0 (**Tampilan → Atur Ulang Ukuran Pane**, juga di bagian bawah menu **Tata Letak**) mengembalikan pane di tata letak itu ke ukuran bawaannya |
 | Pemakaian & pengaturan hemat RAM | indikator **RAM …**, atau menu **Tampilan → Hemat RAM** |
@@ -169,8 +171,8 @@ $APP --selftest            # isolasi profil, halaman Google, User-Agent, persist
 $APP --selftest-persist    # persistensi (baca ulang) + bersih-bersih
 $APP --selftest-ui         # jendela sungguhan dengan state sementara: upgrade dari 0.5.0,
                            # pembekuan, tata letak dan zoom, menampilkan dan menukar profil,
-                           # fokus keyboard, indikator RAM, hapus profil, pertama dibuka (layar
-                           # sambutan, halaman awal, pintasan)
+                           # fokus keyboard, indikator RAM, tab baru dan popup, hapus profil,
+                           # pertama dibuka (layar sambutan, halaman awal, pintasan)
 ```
 
 Semua self-test memakai profil uji sementara dan tidak menyentuh profil asli. Set
@@ -185,13 +187,14 @@ Semua self-test memakai profil uji sementara dan tidak menyentuh profil asli. Se
 | `Sources/XSpace/WebKitSupport.swift` | konfigurasi webview, User-Agent Safari, penghapusan data store, unduhan, halaman error |
 | `Sources/XSpace/PaneView.swift` | satu pane: toolbar mini + `WKWebView` + delegate navigasi/UI |
 | `Sources/XSpace/PageZoom.swift` | zoom halaman sebuah pane: otomatis dari ukuran pane, ditambah zoom profil itu sendiri |
+| `Sources/XSpace/PaneNoteView.swift` | catatan singkat di bagian bawah pane, misalnya bahwa tab baru belum didukung |
 | `Sources/XSpace/StartPageView.swift` | halaman awal pane, seperti tab baru di browser: kotak pencarian dan pintasan |
 | `Sources/XSpace/WelcomeView.swift` | layar sambutan saat pertama dibuka: memilih tata letak |
 | `Sources/XSpace/GridView.swift` | pane di slot tata letak, pane tersembunyi, slot kosong, ikon dan gambar tata letak |
 | `Sources/XSpace/PaneSplitView.swift` | pembagi pane: berdampingan atau bertumpuk, bersarang, tombol tukar |
 | `Sources/XSpace/MainWindowController.swift` | jendela utama, toolbar, profil dan tata letak, hemat RAM |
 | `Sources/XSpace/MemoryMonitor.swift` | pengukuran memori dan pemantau tekanan memori macOS |
-| `Sources/XSpace/PopupWindowController.swift` | popup yang tetap di profilnya |
+| `Sources/XSpace/PopupWindowController.swift` | jendela popup yang tetap di profilnya, dan apa yang dihitung sebagai popup (bukan tab baru) |
 | `Sources/XSpace/AppDelegate.swift` | menu dan siklus hidup app |
 | `Sources/XSpace/SelfTest.swift`, `UISelfTest.swift` | self-test |
 | `Tests/XSpaceTests/` | unit test (`swift test`) |

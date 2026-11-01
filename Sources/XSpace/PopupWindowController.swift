@@ -43,6 +43,22 @@ final class PopupWindowController: NSWindowController, NSWindowDelegate {
         Self.live.remove(self)
     }
 
+    /// Whether a page asks for a popup window rather than a new tab, as browsers tell them apart:
+    /// a popup window has a size or a position of its own, or leaves out bars, as sign-in windows
+    /// do (window.open with "width=500,height=600", for example). A link with target="_blank" and
+    /// window.open without such features ask for a new tab.
+    static func isPopupWindow(_ features: WKWindowFeatures) -> Bool {
+        isPopupWindow(size: [features.width, features.height, features.x, features.y],
+                      bars: [features.menuBarVisibility, features.statusBarVisibility,
+                             features.toolbarsVisibility, features.allowsResizing])
+    }
+
+    /// The same from the features a page gives: `size` its width, height, x and y, `bars` whether
+    /// it wants the menu bar, status bar, toolbars and resizing (nil for what it does not say).
+    nonisolated static func isPopupWindow(size: [NSNumber?], bars: [NSNumber?]) -> Bool {
+        size.contains { $0 != nil } || bars.contains { $0?.boolValue == false }
+    }
+
     static func closeAll(for profileID: UUID) {
         for controller in Array(live) where controller.pane.profile.id == profileID {
             controller.close()
