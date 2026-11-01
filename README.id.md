@@ -27,6 +27,8 @@ saling bercampur dan tanpa banyak jendela browser yang tersebar di beberapa Spac
 - Satu pane per profil, diatur dengan tata letak: **Otomatis** (semua profil dalam grid), 1,
   2 berdampingan, 2 bertumpuk, 3 berdampingan, 2 × 2, 1 + 2, atau 1 + 3. Ukuran pane bisa
   diubah dan posisinya ditukar, dan setiap tata letak mengingat profil dan ukurannya
+- Layar sambutan untuk memilih tata letak saat pertama dibuka, dan halaman awal seperti tab baru
+  di browser untuk setiap pane baru: tidak ada yang dimuat sebelum kamu membuka halaman
 - Warna per profil dan bingkai pane, supaya selalu jelas sedang di akun mana
 - Popup dan jendela login tetap di dalam profilnya
 - Hemat RAM: lazy load, pembekuan otomatis profil tersembunyi, indikator RAM
@@ -77,6 +79,8 @@ notarisasi.
 
 | Aksi | Cara |
 |---|---|
+| Mulai | saat pertama dibuka, pilih tata letak di layar sambutan: XSpace membuat satu profil untuk setiap panenya |
+| Buka halaman di profil baru | ketik alamat atau kata kunci di kotak pencarian halaman awalnya (atau di kolom alamatnya), lalu tekan Return |
 | Pilih tata letak | tombol **Tata Letak** di toolbar, atau menu **Tampilan → Tata Letak** |
 | Tampilkan profil | klik di toolbar (yang sedang tampil disorot), atau ⌘1–⌘9: profil yang tersembunyi menggantikan pane yang aktif |
 | Pilih profil sebuah pane | klik nama profil di kiri toolbar pane (profil yang tampil di tempat lain bertukar posisi) |
@@ -143,7 +147,8 @@ $APP --selftest            # isolasi profil, halaman Google, User-Agent, persist
 $APP --selftest-persist    # persistensi (baca ulang) + bersih-bersih
 $APP --selftest-ui         # jendela sungguhan dengan state sementara: upgrade dari 0.5.0,
                            # pembekuan, tata letak, menampilkan dan menukar profil, fokus
-                           # keyboard, hapus profil, indikator RAM
+                           # keyboard, indikator RAM, hapus profil, pertama dibuka (layar
+                           # sambutan, halaman awal)
 ```
 
 Semua self-test memakai profil uji sementara dan tidak menyentuh profil asli. Set
@@ -157,7 +162,9 @@ Semua self-test memakai profil uji sementara dan tidak menyentuh profil asli. Se
 | `Sources/XSpace/Grid.swift` | tata letak: preset sebagai pohon slot, grid otomatis |
 | `Sources/XSpace/WebKitSupport.swift` | konfigurasi webview, User-Agent Safari, penghapusan data store, unduhan, halaman error |
 | `Sources/XSpace/PaneView.swift` | satu pane: toolbar mini + `WKWebView` + delegate navigasi/UI |
-| `Sources/XSpace/GridView.swift` | pane di slot tata letak, pane tersembunyi, slot kosong, ikon tata letak |
+| `Sources/XSpace/StartPageView.swift` | halaman awal pane, seperti tab baru di browser, selama pane belum punya halaman |
+| `Sources/XSpace/WelcomeView.swift` | layar sambutan saat pertama dibuka: memilih tata letak |
+| `Sources/XSpace/GridView.swift` | pane di slot tata letak, pane tersembunyi, slot kosong, ikon dan gambar tata letak |
 | `Sources/XSpace/PaneSplitView.swift` | pembagi pane: berdampingan atau bertumpuk, bersarang, tombol tukar |
 | `Sources/XSpace/MainWindowController.swift` | jendela utama, toolbar, profil dan tata letak, hemat RAM |
 | `Sources/XSpace/MemoryMonitor.swift` | pengukuran memori dan pemantau tekanan memori macOS |

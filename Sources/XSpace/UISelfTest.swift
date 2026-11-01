@@ -4,9 +4,10 @@ import WebKit
 
 /// `XSpace --selftest-ui [shot.png]`: runs the real XSpace window with THROWAWAY state
 /// (temporary folder + new test profiles), checks upgrading from 0.5.0, freezing, the layouts,
-/// showing and swapping profiles, the keyboard focus, deleting a profile and the RAM indicator,
-/// then deletes everything. Real profiles are never touched. With a .png argument it also saves
-/// a snapshot of the 1 + 3 layout.
+/// showing and swapping profiles, the keyboard focus, the RAM indicator, deleting a profile and
+/// the first start (welcome screen, start pages), then deletes everything. Real profiles are never
+/// touched. With a .png argument it also saves snapshots: shot.png of the 1 + 3 layout,
+/// shot-welcome.png of the welcome screen and shot-start.png of the start pages.
 @MainActor
 final class UISelfTest: NSObject, NSApplicationDelegate {
     private static let aiStudio = "https://aistudio.google.com/"
@@ -30,8 +31,8 @@ final class UISelfTest: NSObject, NSApplicationDelegate {
     }
 
     private func run() async {
-        log("XSpace UI self-test — upgrading, freezing, layouts, keyboard focus, deleting, RAM indicator "
-            + "(throwaway state, test profiles)")
+        log("XSpace UI self-test — upgrading, freezing, layouts, keyboard focus, RAM indicator, deleting, "
+            + "first start (throwaway state, test profiles)")
 
         log("\n[0] Upgrading from 0.5.0")
         // The window opens on a state.json as 0.5.0 left it: two test profiles with two panes each
@@ -130,11 +131,10 @@ final class UISelfTest: NSObject, NSApplicationDelegate {
         }
         check(report.app > 0 && report.total > report.app, "Indicator reads app + page memory")
 
-        let args = CommandLine.arguments
-        if let index = args.firstIndex(of: "--selftest-ui"), index + 1 < args.count, args[index + 1].hasSuffix(".png") {
+        if let shot = snapshotURL() {
             controller.testSetPolicy(.never)
             await pause(6)
-            await controller.writeSnapshot(to: URL(fileURLWithPath: args[index + 1]))
+            await controller.writeSnapshot(to: shot)
         }
 
         log("\n[7] Deleting a profile")
@@ -164,16 +164,99 @@ final class UISelfTest: NSObject, NSApplicationDelegate {
             check(!queued && !stores.contains(fifth), "Deleting a profile deletes its data store right away (\(seconds) s)")
         }
 
-        log("\n[8] Clean up")
+        // The data stores of the test profiles are deleted at the end ([9]).
         var removals = controller.profiles.map { DataStoreRemoval($0.store) }
         // The deleted profile's store is still there if WebKit held it (see the note above) or if
         // the checks above failed. It belongs to the throwaway state, so it must not stay behind.
         if stores.contains(fifth), let removal = watch?.removal { removals.append(removal) }
         controller.testDestroyAll()
         controller.close()
+
+        log("\n[8] First start: welcome screen and start pages")
+        removals += await checkFirstStart()
+
+        log("\n[9] Clean up")
         for removal in removals {
             await checkRemoval(removal, "Test profile \(removal.shortID)… deleted")
         }
+    }
+
+    /// [8]: a window without saved state shows the welcome screen and makes no profile; choosing a
+    /// layout there makes a profile for each pane, every one on its start page; typing an address
+    /// opens it. Returns the removals of the data stores of the profiles it made.
+    private func checkFirstStart() async -> [DataStoreRemoval] {
+        StateStore.shared.data = AppStateData()
+        let controller = MainWindowController()
+        controller.showWindow(nil)
+        func finish() -> [DataStoreRemoval] {
+            let removals = controller.profiles.map { DataStoreRemoval($0.store) }
+            controller.testDestroyAll()
+            controller.close()
+            return removals
+        }
+        guard let welcome = controller.testWelcome else {
+            check(false, "Without profiles the window shows the welcome screen")
+            return finish()
+        }
+        let toolbarItems = { controller.window?.toolbar?.items.filter { $0.itemIdentifier != .flexibleSpace } ?? [] }
+        check(controller.profiles.isEmpty && StateStore.shared.data.profiles.isEmpty && controller.testGrid.isHidden
+              && !toolbarItems().isEmpty && toolbarItems().allSatisfy(\.isHidden),
+              "Without profiles the window shows the welcome screen instead of the toolbar items, and makes no profile")
+        let welcomeFrame = controller.window?.frame
+        check(welcome.cards.map(\.preset) == GridPreset.allCases.filter { $0 != .automatic },
+              "The welcome screen offers every fixed layout")
+        if let shot = snapshotURL("welcome") {
+            await pause(1)
+            await controller.writeSnapshot(to: shot)
+        }
+        if let window = controller.window {
+            // Content that does not fit would make the window larger than its minimum size.
+            let frame = window.frame
+            window.setFrame(NSRect(origin: frame.origin, size: window.minSize), display: true)
+            window.layoutIfNeeded()
+            await pause(0.5)
+            check(window.frame.size == window.minSize,
+                  "The welcome screen fits the smallest window (\(Int(window.frame.width))×\(Int(window.frame.height)))")
+            window.setFrame(frame, display: true)
+        }
+
+        welcome.cards.first { $0.preset == .twoByTwo }?.performClick(nil)
+        let names = ["Akun 1", "Akun 2", "Akun 3", "Akun 4"]
+        let panes = names.compactMap { controller.testPane($0) }
+        let profiles = StateStore.shared.data.profiles
+        check(controller.testWelcome == nil && !controller.testGrid.isHidden && toolbarItems().allSatisfy { !$0.isHidden }
+              && StateStore.shared.data.layout == .twoByTwo && controller.testShown == names && panes.count == 4,
+              "Choosing 2 × 2 makes four profiles, one in each pane (\(controller.testShown.map { $0 ?? "-" }))")
+        check(controller.window?.frame == welcomeFrame, "The window keeps its size")
+        guard panes.count == 4 else { return finish() }
+        check(panes.allSatisfy { $0.isShowingStartPage && $0.webView.url == nil && !$0.webView.isLoading }
+              && profiles.allSatisfy { $0.url == nil },
+              "Every pane shows its start page and loads nothing")
+        let firstField = panes[0].focusTarget as? NSTextField
+        check(controller.focusedPane === panes[0] && firstField?.currentEditor() != nil,
+              "The first pane's address field has the keyboard focus")
+        if let shot = snapshotURL("start") {
+            await pause(1)
+            await controller.writeSnapshot(to: shot)
+        }
+
+        // Typing an address in the second pane and pressing Return.
+        let typed = panes[1]
+        if let field = typed.focusTarget as? NSTextField {
+            controller.window?.makeFirstResponder(field)
+            let editor = field.currentEditor() as? NSTextView
+            editor?.insertText("example.com", replacementRange: NSRange(location: NSNotFound, length: 0))
+            editor?.insertNewline(nil)
+        }
+        check(!typed.isShowingStartPage && !typed.webView.isHidden && typed.webView.url?.host == "example.com"
+              && controller.focusedPane === typed,
+              "An address typed on the start page opens in its pane (\(typed.webView.url?.absoluteString ?? "-"))")
+        check(StateStore.shared.data.profiles[1].url == "https://example.com",
+              "The profile keeps that address as its page right away")
+        check(panes[0].isShowingStartPage && panes[2].isShowingStartPage && panes[3].isShowingStartPage,
+              "The other panes stay on their start page")
+        await pause(1)
+        return finish()
     }
 
     /// [4]: switching layouts, swapping, sizes, empty slots, new profiles, showing a hidden profile,
@@ -191,7 +274,7 @@ final class UISelfTest: NSObject, NSApplicationDelegate {
               && controller.testSelectedInToolbar == [first, second],
               "2 berdampingan: the profile shown, then the other, both selected in the toolbar")
 
-        controller.window?.makeFirstResponder(a.webView)
+        controller.window?.makeFirstResponder(a.focusTarget)
         controller.swapPanes(nil)
         grid.layoutSubtreeIfNeeded()
         check(controller.testShown == [second, first] && b.frame.maxX < a.frame.minX
@@ -237,7 +320,7 @@ final class UISelfTest: NSObject, NSApplicationDelegate {
               && panes.allSatisfy { $0.webView.configuration.websiteDataStore === $0.profile.store },
               "Every pane is its own profile, with its own data store")
 
-        controller.window?.makeFirstResponder(panes[2].webView)
+        controller.window?.makeFirstResponder(panes[2].focusTarget)
         controller.createProfile(name: "Uji 5")   // every slot is taken: it takes the place of Uji 3
         check(controller.testShown == [first, second, "Uji 5", "Uji 4"] && controller.testPane("Uji 3") === panes[2]
               && controller.testSelectedInToolbar == [first, second, "Uji 4", "Uji 5"],
@@ -259,7 +342,7 @@ final class UISelfTest: NSObject, NSApplicationDelegate {
         }
         check(controller.testShown == names && third != fourth, "And back")
 
-        controller.window?.makeFirstResponder(panes[1].webView)
+        controller.window?.makeFirstResponder(panes[1].focusTarget)
         controller.toggleSingleProfile(nil)
         check(controller.testShown == [second], "⌃⌘G shows only the profile you are in")
         controller.toggleSingleProfile(nil)
@@ -276,8 +359,8 @@ final class UISelfTest: NSObject, NSApplicationDelegate {
         guard let hidden = controller.testPane("Uji 5"), let shown = controller.testPane("Uji 4") else {
             return check(false, "Uji 4 is shown and Uji 5 hidden but alive")
         }
-        controller.window?.makeFirstResponder(shown.webView)
-        check(controller.window?.makeFirstResponder(hidden.webView) == false && controller.focusedPane === shown,
+        controller.window?.makeFirstResponder(shown.focusTarget)
+        check(controller.window?.makeFirstResponder(hidden.focusTarget) == false && controller.focusedPane === shown,
               "A page that is not on screen cannot take the keyboard focus")
         controller.testClickInToolbar("Uji 5")
         check(controller.focusedPane === hidden && controller.testShown.contains("Uji 5") && !controller.testShown.contains("Uji 4"),
@@ -312,6 +395,18 @@ final class UISelfTest: NSObject, NSApplicationDelegate {
         } catch {
             check(false, "Writing a 0.5.0 state.json (\(error.localizedDescription))")
         }
+    }
+
+    /// Where to save a snapshot: the .png file given after --selftest-ui, or with "-<name>" added to
+    /// its name. Nil without one.
+    private func snapshotURL(_ name: String? = nil) -> URL? {
+        let args = CommandLine.arguments
+        guard let index = args.firstIndex(of: "--selftest-ui"), index + 1 < args.count,
+              args[index + 1].hasSuffix(".png") else { return nil }
+        let file = URL(fileURLWithPath: args[index + 1])
+        guard let name else { return file }
+        return file.deletingLastPathComponent()
+            .appendingPathComponent("\(file.deletingPathExtension().lastPathComponent)-\(name).png")
     }
 
     /// state.json as saved, as JSON.
@@ -351,7 +446,7 @@ private final class DeletionWatch {
         init(_ object: AnyObject) { self.object = object }
     }
 
-    /// Deletes the store if the app could not (see [8]).
+    /// Deletes the store if the app could not (see [9]).
     let removal: DataStoreRemoval
     private let xspaceObjects: [(name: String, box: WeakBox)]
     private let store: WeakBox

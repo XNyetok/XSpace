@@ -6,6 +6,16 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- A welcome screen on the first start: choose a layout, and XSpace makes a profile for each of its
+  panes. Nothing loads before you open a page.
+- A start page for a pane without a page, like a browser's new tab page: the profile's name and a
+  search box. Search Google or type an address there (or in the address bar) and press Return; the
+  profile keeps that page.
+
+### Changed
+- A new profile shows the start page instead of opening Google AI Studio.
+
 ## [0.6.0] - 2026-11-01
 
 ### Added

@@ -1,12 +1,16 @@
 import AppKit
 import WebKit
 
-/// One browser pane: a mini toolbar (profile, back/forward/reload, address) + a WKWebView.
-/// The border uses the profile color so it is always clear which account a pane belongs to.
+/// One browser pane: a mini toolbar (profile, back/forward/reload, address) + a WKWebView, or the
+/// start page while the pane has no page yet. The border uses the profile color so it is always
+/// clear which account a pane belongs to.
 @MainActor
 final class PaneView: NSView, WKNavigationDelegate, WKUIDelegate {
     /// Height of the mini toolbar above the page.
     static let toolbarHeight: CGFloat = 32
+    /// The hint in an empty address field (and in the start page's search box), as in browsers:
+    /// what is not an address is searched for with Google (see resolve).
+    static let addressPlaceholder = "Telusuri Google atau ketik URL"
 
     let profile: Profile
     let webView: WKWebView
@@ -34,9 +38,14 @@ final class PaneView: NSView, WKNavigationDelegate, WKUIDelegate {
     /// The web content process died while the pane was hidden. It is reloaded when the pane
     /// becomes visible, not in the background, so the memory is not immediately used again.
     private(set) var needsReloadWhenVisible = false
+    /// Shown instead of the page while the pane has no page yet; nil once one opens.
+    private var startPage: StartPageView?
 
-    /// - Parameter configuration: supplied by WebKit for popups and must be used as is, so a
-    ///   sign-in popup stays in the same profile data store; nil for regular panes.
+    /// - Parameters:
+    ///   - configuration: supplied by WebKit for popups and must be used as is, so a sign-in popup
+    ///     stays in the same profile data store; nil for regular panes.
+    ///   - initialURL: the page to open. Without one, a regular pane shows its start page (an
+    ///     address field) and loads nothing.
     init(profile: Profile, configuration: WKWebViewConfiguration?, initialURL: URL?) {
         self.profile = profile
         let config = configuration ?? WebKitSupport.makeConfiguration(store: profile.store)
@@ -49,20 +58,33 @@ final class PaneView: NSView, WKNavigationDelegate, WKUIDelegate {
         webView.isInspectable = true
         setUpViews()
         observeWebView()
-        refreshProfileAppearance()
         if let initialURL {
             webView.load(URLRequest(url: initialURL))
+        } else if configuration == nil {
+            showStartPage()
         }
+        refreshProfileAppearance()
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
+    /// Whether the pane shows its start page: it has no page yet, and nothing is loaded.
+    var isShowingStartPage: Bool { startPage != nil }
+
+    /// What gets the keyboard focus when the pane does: the start page's address field, or the page.
+    var focusTarget: NSView { startPage?.field ?? webView }
+
     /// URL worth restoring later (not a sign-in or error page).
     var persistableURL: String? {
-        guard let url = webView.url, let scheme = url.scheme?.lowercased(),
-              scheme == "http" || scheme == "https" else { return nil }
-        if let host = url.host, host.hasPrefix("accounts.") { return nil }
+        guard let url = webView.url, Self.isWorthRestoring(url) else { return nil }
         return url.absoluteString
+    }
+
+    /// Pages worth restoring: http and https, except sign-in pages.
+    static func isWorthRestoring(_ url: URL) -> Bool {
+        guard let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" else { return false }
+        if let host = url.host, host.hasPrefix("accounts.") { return false }
+        return true
     }
 
     func tearDown() {
@@ -77,6 +99,7 @@ final class PaneView: NSView, WKNavigationDelegate, WKUIDelegate {
         webView.navigationDelegate = nil
         webView.uiDelegate = nil
         webView.removeFromSuperview()
+        startPage?.onSubmit = nil
         onURLChange = nil
         onTitleChange = nil
         onRequestClose = nil
@@ -119,7 +142,7 @@ final class PaneView: NSView, WKNavigationDelegate, WKUIDelegate {
         urlField.cell?.isScrollable = true
         urlField.cell?.wraps = false
         urlField.cell?.sendsActionOnEndEditing = false
-        urlField.placeholderString = "Ketik alamat atau kata kunci"
+        urlField.placeholderString = Self.addressPlaceholder
         urlField.target = self
         urlField.action = #selector(urlFieldSubmitted(_:))
         urlField.setContentHuggingPriority(.defaultLow, for: .horizontal)
@@ -164,6 +187,47 @@ final class PaneView: NSView, WKNavigationDelegate, WKUIDelegate {
         ])
     }
 
+    /// The start page covers the page area. The toolbar stays as it is, as in a browser, with
+    /// nothing to go back to or reload yet.
+    private func showStartPage() {
+        let page = StartPageView()
+        page.translatesAutoresizingMaskIntoConstraints = false
+        page.onSubmit = { [weak self] text in self?.openFromStartPage(text) }
+        addSubview(page)
+        NSLayoutConstraint.activate([
+            page.topAnchor.constraint(equalTo: toolbar.bottomAnchor),
+            page.leadingAnchor.constraint(equalTo: leadingAnchor),
+            page.trailingAnchor.constraint(equalTo: trailingAnchor),
+            page.bottomAnchor.constraint(equalTo: bottomAnchor),
+        ])
+        startPage = page
+        webView.isHidden = true
+        syncButtons()
+    }
+
+    /// The pane gets its page: the start page goes for good.
+    private func leaveStartPage() {
+        guard let page = startPage else { return }
+        startPage = nil
+        // Hidden now, removed after this event: this can run in the action of the page's own
+        // field, which must outlive it.
+        page.isHidden = true
+        Task { @MainActor in page.removeFromSuperview() }
+        webView.isHidden = false
+        syncButtons()
+    }
+
+    /// Opens what was typed on the start page, or in the address field while it is shown. The
+    /// profile keeps that address as its page right away, so it comes back even if the site first
+    /// sends you to a sign-in page.
+    private func openFromStartPage(_ text: String) {
+        guard let url = PaneView.resolve(text) else { return }
+        leaveStartPage()
+        webView.load(URLRequest(url: url))
+        if Self.isWorthRestoring(url) { onURLChange?(url.absoluteString) }
+        window?.makeFirstResponder(webView)
+    }
+
     private func configure(_ button: NSButton, symbol: String, tip: String, action: Selector) {
         button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: tip)
         button.isBordered = false
@@ -203,6 +267,7 @@ final class PaneView: NSView, WKNavigationDelegate, WKUIDelegate {
             ? profile.name
             : "\(profile.name): klik untuk menampilkan profil lain di pane ini"
         profileButton.setAccessibilityLabel("Profil \(profile.name)")
+        startPage?.show(profile)
     }
 
     override func viewDidChangeEffectiveAppearance() {
@@ -251,6 +316,7 @@ final class PaneView: NSView, WKNavigationDelegate, WKUIDelegate {
     private func syncButtons() {
         backButton.isEnabled = webView.canGoBack
         forwardButton.isEnabled = webView.canGoForward
+        reloadButton.isEnabled = !isShowingStartPage
         let loading = webView.isLoading
         reloadButton.image = NSImage(systemSymbolName: loading ? "xmark" : "arrow.clockwise",
                                      accessibilityDescription: loading ? "Berhenti" : "Muat ulang")
@@ -300,6 +366,7 @@ final class PaneView: NSView, WKNavigationDelegate, WKUIDelegate {
 
     @objc private func urlFieldSubmitted(_ sender: NSTextField) {
         let text = sender.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        if isShowingStartPage { return openFromStartPage(text) }
         guard !text.isEmpty, let url = PaneView.resolve(text) else { return }
         webView.load(URLRequest(url: url))
         window?.makeFirstResponder(webView)
@@ -369,6 +436,10 @@ final class PaneView: NSView, WKNavigationDelegate, WKUIDelegate {
 
     func webView(_ webView: WKWebView, navigationResponse: WKNavigationResponse, didBecome download: WKDownload) {
         download.delegate = DownloadCoordinator.shared
+    }
+
+    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        leaveStartPage()   // however the page was opened
     }
 
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {

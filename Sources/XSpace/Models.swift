@@ -12,8 +12,9 @@ struct ProfileState: Codable, Equatable {
     var id: UUID
     var name: String
     var colorIndex: Int
-    /// The page of the profile's pane.
-    var url: String
+    /// The page of the profile's pane; nil until one is opened, and until then the pane shows its
+    /// start page (an address field).
+    var url: String?
     /// The profile's panes as XSpace 0.5.0 knows them; only written for 0.5.0 (see
     /// AppStateData.encodedForDisk).
     var panes: [PaneState] = []
@@ -23,7 +24,8 @@ struct ProfileState: Codable, Equatable {
 
 extension ProfileState {
     /// Up to 0.5.0 a profile had panes (AI Studio | Sheets) and no page of its own: it keeps the
-    /// page of its first pane.
+    /// page of its first pane. An empty address (what 0.5.0 gets for a profile without a page)
+    /// is no page.
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(UUID.self, forKey: .id)
@@ -31,7 +33,8 @@ extension ProfileState {
         colorIndex = try c.decode(Int.self, forKey: .colorIndex)
         panes = try c.decodeIfPresent([PaneState].self, forKey: .panes) ?? []
         splitRatios = try c.decodeIfPresent([Double].self, forKey: .splitRatios)
-        url = try c.decodeIfPresent(String.self, forKey: .url) ?? panes.first?.url ?? Defaults.startURL
+        let page = try c.decodeIfPresent(String.self, forKey: .url) ?? panes.first?.url
+        url = page?.isEmpty == false ? page : nil
     }
 }
 
@@ -227,12 +230,25 @@ struct AppStateData: Codable {
 
     // MARK: Profiles
 
-    /// Adds a profile that opens the start page. A fixed layout shows it in its first empty slot,
-    /// otherwise in `slot` (the pane you are in); the automatic layout shows every profile anyway.
-    /// It becomes the active profile.
+    /// The first start, from the welcome screen: the layout, with a new profile in each of its
+    /// slots (one profile for the automatic layout). The profiles have no page yet, so nothing
+    /// loads until an address is typed; the first one becomes the active profile.
+    mutating func start(with preset: GridPreset) {
+        guard profiles.isEmpty else { return }
+        layout = preset
+        previousLayout = nil
+        for index in 0..<(preset.slotCount ?? 1) {
+            addProfile(name: "Akun \(index + 1)", colorIndex: index, inSlot: index)
+        }
+        selectedProfileID = profiles.first?.id
+    }
+
+    /// Adds a profile without a page: its pane shows the start page. A fixed layout shows it in
+    /// its first empty slot, otherwise in `slot` (the pane you are in); the automatic layout shows
+    /// every profile anyway. It becomes the active profile.
     @discardableResult
     mutating func addProfile(name: String, colorIndex: Int, inSlot slot: Int) -> ProfileState {
-        let profile = ProfileState(id: UUID(), name: name, colorIndex: colorIndex, url: Defaults.startURL)
+        let profile = ProfileState(id: UUID(), name: name, colorIndex: colorIndex, url: nil)
         profiles.append(profile)
         if layout.slotCount != nil {
             var shown = shownProfiles
@@ -265,14 +281,14 @@ struct AppStateData: Codable {
     }
 
     /// state.json as written to disk: the current format, plus what 0.5.0 reads, so going back to
-    /// 0.5.0 keeps every profile: each with one pane, the active one selected, and Semua unless a
-    /// single profile is shown.
+    /// 0.5.0 keeps every profile: each with one pane (an empty one for a profile without a page),
+    /// the active one selected, and Semua unless a single profile is shown.
     func encodedForDisk() throws -> Data {
         var written = self
         written.version = Self.currentVersion
         written.profiles = profiles.map { profile in
             var copy = profile
-            copy.panes = [PaneState(url: profile.url)]
+            copy.panes = [PaneState(url: profile.url ?? "")]
             copy.splitRatios = nil
             return copy
         }
@@ -282,11 +298,6 @@ struct AppStateData: Codable {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         return try encoder.encode(written)
     }
-}
-
-enum Defaults {
-    /// The page a new profile opens: Google AI Studio.
-    static let startURL = "https://aistudio.google.com/"
 }
 
 enum Palette {

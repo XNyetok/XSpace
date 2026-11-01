@@ -90,7 +90,7 @@ final class SavedStateTests: XCTestCase {
             """)
         XCTAssertEqual(state.layout, .automatic)
         XCTAssertEqual(state.shownProfiles, [first, second])
-        XCTAssertEqual(state.profiles.map(\.url), [aiStudio, Defaults.startURL], "a profile without panes opens the start page")
+        XCTAssertEqual(state.profiles.map(\.url), [aiStudio, nil], "a profile without panes shows the start page")
     }
 
     /// Version 2 was never released, but its files exist: the workspaces are left out, and the
@@ -134,8 +134,8 @@ final class SavedStateTests: XCTestCase {
         state.profiles[0].url = "https://a.example/"
         let legacy = try JSONDecoder().decode(Legacy050State.self, from: state.encodedForDisk())
         XCTAssertEqual(legacy.profiles.map(\.id), ids(state))
-        XCTAssertEqual(legacy.profiles.map { $0.panes.map(\.url) }, [["https://a.example/"], [Defaults.startURL]],
-                       "one pane per profile")
+        XCTAssertEqual(legacy.profiles.map { $0.panes.map(\.url) }, [["https://a.example/"], [""]],
+                       "one pane per profile, an empty one for a profile without a page")
         XCTAssertTrue(legacy.showAll, "more than one profile on screen: Semua")
         XCTAssertEqual(legacy.selectedProfileID, state.selectedProfileID)
 
@@ -143,6 +143,16 @@ final class SavedStateTests: XCTestCase {
         let fokus = try JSONDecoder().decode(Legacy050State.self, from: state.encodedForDisk())
         XCTAssertFalse(fokus.showAll)
         XCTAssertEqual(fokus.selectedProfileID, state.profiles[0].id)
+    }
+
+    func testAProfileWithoutAPageStaysWithoutOne() throws {
+        let state = state(profiles: 1)
+        let written = String(decoding: try state.encodedForDisk(), as: UTF8.self)
+        XCTAssertFalse(written.contains(#""url" : null"#), written)
+        XCTAssertNil(try JSONDecoder().decode(AppStateData.self, from: state.encodedForDisk()).profiles[0].url)
+        let id = UUID()
+        let empty = try decode(#"{"profiles": [{"id": "\#(id)", "name": "Akun 1", "colorIndex": 0, "url": ""}]}"#)
+        XCTAssertNil(empty.profiles[0].url, "an empty address is no page")
     }
 
     /// 0.5.0 saves the file again without the keys it does not know, but keeps "version": 3.
@@ -248,7 +258,40 @@ final class SavedStateTests: XCTestCase {
         let third = state.addProfile(name: "Akun 3", colorIndex: 2, inSlot: 0)
         XCTAssertEqual(state.shownProfiles, [third.id, second.id], "no empty slot: the given one")
         XCTAssertEqual(state.selectedProfileID, third.id)
-        XCTAssertEqual(third.url, Defaults.startURL)
+        XCTAssertNil(third.url, "a new profile has no page yet: its pane shows the start page")
+    }
+
+    // MARK: The first start
+
+    func testTheFirstStartMakesAProfileForEveryPaneOfTheLayout() {
+        var state = AppStateData()
+        state.start(with: .oneAndThree)
+        XCTAssertEqual(state.layout, .oneAndThree)
+        XCTAssertEqual(state.profiles.map(\.name), ["Akun 1", "Akun 2", "Akun 3", "Akun 4"])
+        XCTAssertEqual(state.profiles.map(\.colorIndex), [0, 1, 2, 3], "every profile in its own color")
+        XCTAssertEqual(state.shownProfiles, ids(state).map { $0 }, "one profile in each pane, in order")
+        XCTAssertEqual(state.profiles.map(\.url), [nil, nil, nil, nil], "nothing to load yet")
+        XCTAssertEqual(state.selectedProfileID, state.profiles[0].id, "the first one is the active profile")
+        XCTAssertNil(state.previousLayout)
+    }
+
+    func testTheFirstStartWithOneOrEveryProfile() {
+        var single = AppStateData()
+        single.start(with: .single)
+        XCTAssertEqual(single.profiles.count, 1)
+        XCTAssertEqual(single.shownProfiles, [single.profiles[0].id])
+        var automatic = AppStateData()
+        automatic.start(with: .automatic)
+        XCTAssertEqual(automatic.profiles.count, 1, "the automatic layout starts with one profile")
+        XCTAssertEqual(automatic.shownProfiles, [automatic.profiles[0].id])
+    }
+
+    func testThereIsOnlyOneFirstStart() {
+        var state = state(profiles: 2)
+        let before = ids(state)
+        state.start(with: .twoByTwo)
+        XCTAssertEqual(ids(state), before, "with profiles, nothing changes")
+        XCTAssertEqual(state.layout, .automatic)
     }
 
     func testDeletingAProfileGivesItsPlaceToOneThatIsHidden() {

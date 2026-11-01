@@ -3,7 +3,8 @@ import WebKit
 
 /// Main window: toolbar (profiles, add, profile options, layout, RAM indicator) and the panes.
 /// Every profile is one pane, its own browser with its own login. The layout (see GridPreset)
-/// decides which profiles are shown and where; the others are hidden, and frozen in time.
+/// decides which profiles are shown and where; the others are hidden, and frozen in time. Without
+/// profiles (the first start) the window shows the welcome screen instead.
 @MainActor
 final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolbarDelegate,
                                   NSMenuItemValidation, NSMenuDelegate {
@@ -14,6 +15,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
     /// Since when each profile has been off screen; drives automatic freezing.
     private var hiddenSince: [UUID: Date] = [:]
     private let grid = GridView()
+    /// While there are no profiles.
+    private var welcome: WelcomeView?
     /// The empty slots of the current layout, by slot.
     private var emptySlots: [Int: EmptySlotView] = [:]
     private let profileSwitcher = NSSegmentedControl()
@@ -134,11 +137,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
     }
 
     private func loadProfiles() {
-        if state.data.profiles.isEmpty {
-            state.data.addProfile(name: "Akun 1", colorIndex: 0, inSlot: 0)
-            state.data.normalizeLayout()
-            state.save()
-        }
         profiles = state.data.profiles.map { Profile(state: $0) }
         grid.onSizesChanged = { [weak self] sizes in
             guard let self else { return }
@@ -154,6 +152,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
     /// are throttled by WebKit; when they get frozen (web views destroyed) is decided by the
     /// HibernatePolicy. A profile that has not been shown yet is not loaded at all.
     private func applyLayout() {
+        showWelcome(profiles.isEmpty)
         let paneHadFocus = focusedPane != nil
         let shown = state.data.shownProfiles
         let shownIDs = Set(shown.compactMap { $0 })
@@ -184,13 +183,58 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         // it, if AppKit did not take it): the focus goes to the active profile's pane.
         let responderHidden = (window?.firstResponder as? NSView)?.isHiddenOrHasHiddenAncestor == true
         if responderHidden || (paneHadFocus && focusedPane == nil) {
-            window?.makeFirstResponder(activePane?.webView)
+            window?.makeFirstResponder(activePane?.focusTarget)
         }
         refreshSwitcherSelection()
         layoutItem?.image = state.data.layout.icon
         let name = state.data.layout == .single ? (activeProfile?.name ?? "") : state.data.layout.title
-        window?.title = "XSpace — \(name)"
+        window?.title = profiles.isEmpty ? "XSpace" : "XSpace — \(name)"
         refreshMemoryIndicator()
+    }
+
+    /// The welcome screen takes the place of the panes while there are no profiles, and the toolbar
+    /// items wait too. (The items are hidden, not the toolbar: that would change the window's height.)
+    private func showWelcome(_ shown: Bool) {
+        guard shown != (welcome != nil) else { return }
+        window?.toolbar?.items.forEach { $0.isHidden = shown }
+        grid.isHidden = shown
+        if shown, let content = window?.contentView {
+            let view = WelcomeView()
+            view.onChoose = { [weak self] preset in self?.start(with: preset) }
+            view.translatesAutoresizingMaskIntoConstraints = false
+            content.addSubview(view)
+            NSLayoutConstraint.activate([
+                view.topAnchor.constraint(equalTo: content.topAnchor),
+                view.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+                view.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+                view.bottomAnchor.constraint(equalTo: content.bottomAnchor),
+            ])
+            welcome = view
+        } else if !shown, let welcome {
+            welcome.removeFromSuperview()
+            self.welcome = nil
+        }
+    }
+
+    /// Leaves the welcome screen with the layout chosen there: a new profile in each of its panes
+    /// (see AppStateData.start), every one on its start page, the first one with the keyboard focus.
+    private func start(with preset: GridPreset) {
+        guard profiles.isEmpty else { return }
+        state.data.start(with: preset)
+        profiles = state.data.profiles.map { Profile(state: $0) }
+        state.save()
+        rebuildSwitcher()
+        applyLayout()
+        if let first = profiles.first { focus(first.id) }
+    }
+
+    /// When the window opens on a start page, its address field gets the keyboard focus, so you can
+    /// type right away.
+    override func showWindow(_ sender: Any?) {
+        super.showWindow(sender)
+        if focusedPane == nil, let pane = activePane, pane.isShowingStartPage {
+            window?.makeFirstResponder(pane.focusTarget)
+        }
     }
 
     /// The pane of a profile, made the first time the profile is shown or after it was frozen.
@@ -217,7 +261,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
     }
 
     private func rebuildSwitcher() {
-        profileSwitcher.segmentCount = profiles.count
+        // Without profiles (the welcome screen) one empty segment stays: the toolbar measures the
+        // control even while its item is hidden, and warns about one without width.
+        profileSwitcher.segmentCount = max(profiles.count, 1)
         for (index, profile) in profiles.enumerated() {
             profileSwitcher.setLabel(profile.name, forSegment: index)
             profileSwitcher.setImage(Palette.dot(profile.color), forSegment: index)
@@ -240,7 +286,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
 
     private func focus(_ id: UUID) {
         guard state.data.isShown(id), let pane = panes[id] else { return }
-        window?.makeFirstResponder(pane.webView)
+        window?.makeFirstResponder(pane.focusTarget)
     }
 
     func persistAll() {
@@ -329,7 +375,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         setLayout(preset)
     }
 
+    /// Without profiles, a layout chosen from the menu starts like one chosen on the welcome screen.
     func setLayout(_ preset: GridPreset) {
+        if profiles.isEmpty { return start(with: preset) }
         guard preset != state.data.layout else { return }
         let active = activeProfile?.id
         state.data.switchLayout(to: preset, active: active)
@@ -520,15 +568,20 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         guard let rep = frameView.bitmapImageRepForCachingDisplay(in: bounds) else { return }
         frameView.cacheDisplay(in: bounds, to: rep)
 
-        print("Window: \(Int(window.frame.width))×\(Int(window.frame.height)), layout: \(state.data.layout.rawValue)")
+        print("Window: \(Int(window.frame.width))×\(Int(window.frame.height)), "
+              + (profiles.isEmpty ? "welcome screen" : "layout: \(state.data.layout.rawValue)"))
         var shots: [(NSImage, NSRect)] = []
-        for (slot, id) in state.data.shownProfiles.enumerated() {
+        let shown = profiles.isEmpty ? [] : state.data.shownProfiles
+        for (slot, id) in shown.enumerated() {
             guard let profile = profile(id), let pane = panes[profile.id] else {
                 print("Slot \(slot + 1): empty")
                 continue
             }
             let rect = pane.webView.convert(pane.webView.bounds, to: frameView)
-            print("Slot \(slot + 1): “\(profile.name)” \(Int(rect.width))×\(Int(rect.height)) — \(pane.webView.url?.absoluteString ?? "-")")
+            // The start page is part of the window; the web view behind it is empty.
+            let page = pane.isShowingStartPage ? "start page" : pane.webView.url?.absoluteString ?? "-"
+            print("Slot \(slot + 1): “\(profile.name)” \(Int(rect.width))×\(Int(rect.height)) — \(page)")
+            guard !pane.isShowingStartPage else { continue }
             if let image = try? await pane.webView.takeSnapshot(configuration: nil) {
                 shots.append((image, rect))
             }
@@ -576,6 +629,12 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
     func toolbar(_ toolbar: NSToolbar,
                  itemForItemIdentifier itemIdentifier: NSToolbarItem.Identifier,
                  willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {
+        let item = makeToolbarItem(itemIdentifier)
+        item?.isHidden = welcome != nil
+        return item
+    }
+
+    private func makeToolbarItem(_ itemIdentifier: NSToolbarItem.Identifier) -> NSToolbarItem? {
         switch itemIdentifier {
         case ToolbarID.profiles:
             let item = NSToolbarItem(itemIdentifier: itemIdentifier)
@@ -770,9 +829,13 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         switch menuItem.action {
         case #selector(chooseLayout(_:)):
-            menuItem.state = (menuItem.representedObject as? String) == state.data.layout.rawValue ? .on : .off
+            let isCurrent = !profiles.isEmpty && (menuItem.representedObject as? String) == state.data.layout.rawValue
+            menuItem.state = isCurrent ? .on : .off
         case #selector(toggleSingleProfile(_:)):
             menuItem.state = state.data.layout == .single ? .on : .off
+            return !profiles.isEmpty
+        case #selector(renameProfile(_:)), #selector(cycleProfileColor(_:)):
+            return activeProfile != nil
         case #selector(setHibernatePolicy(_:)):
             menuItem.state = (menuItem.representedObject as? String) == state.data.hibernatePolicy.rawValue ? .on : .off
         case #selector(hibernateHiddenNow(_:)):
@@ -823,6 +886,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
     }
 
     var testGrid: GridView { grid }
+
+    /// The welcome screen, while it is shown.
+    var testWelcome: WelcomeView? { welcome }
 
     func testSetPolicy(_ policy: HibernatePolicy) {
         state.data.hibernatePolicy = policy

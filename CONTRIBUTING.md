@@ -41,8 +41,8 @@ XSPACE_WARNINGS_AS_ERRORS=1 ./scripts/build.sh   # build, failing on compiler wa
 APP=build/XSpace.app/Contents/MacOS/XSpace
 $APP --selftest && $APP --selftest-persist       # isolation, User-Agent, persistence
 $APP --selftest-ui                               # upgrading from 0.5.0, freezing, layouts,
-                                                 # keyboard focus, deleting a profile, RAM
-                                                 # indicator (opens a window briefly)
+                                                 # keyboard focus, RAM indicator, deleting a
+                                                 # profile, first start (opens a window briefly)
 ```
 
 The self-tests use throwaway profiles and never touch your own. CI runs all of the above on

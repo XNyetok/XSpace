@@ -165,25 +165,48 @@ final class EmptySlotView: NSView {
 }
 
 extension GridPreset {
+    /// The arrangement its pictures show: the automatic layout is drawn as two rows of three.
+    private var pictureTree: GridNode {
+        tree(slots: slotCount ?? 6)
+    }
+
     /// A small picture of the layout for menus and the toolbar (a template image).
     var icon: NSImage {
-        // The automatic layout is drawn as two rows of three.
-        let tree = self.tree(slots: slotCount ?? 6)
+        let tree = pictureTree
         let image = NSImage(size: NSSize(width: 19, height: 14), flipped: true) { rect in
             NSColor.black.setFill()
-            Self.draw(tree, in: rect.insetBy(dx: 0.5, dy: 0.5))
+            Self.draw(tree, in: rect.insetBy(dx: 0.5, dy: 0.5), gap: 1.5) { _, slotRect in
+                NSBezierPath(roundedRect: slotRect, xRadius: 1.5, yRadius: 1.5).fill()
+            }
             return true
         }
         image.isTemplate = true
         return image
     }
 
-    private static func draw(_ node: GridNode, in rect: NSRect) {
+    /// A larger picture for the welcome screen: every pane framed in the color of the profile it
+    /// gets, like the panes themselves. Drawn when shown, so the colors follow light and dark mode.
+    func picture(size: NSSize) -> NSImage {
+        let tree = pictureTree
+        return NSImage(size: size, flipped: true) { rect in
+            Self.draw(tree, in: rect.insetBy(dx: 1, dy: 1), gap: 4) { slot, slotRect in
+                let path = NSBezierPath(roundedRect: slotRect.insetBy(dx: 0.75, dy: 0.75), xRadius: 4, yRadius: 4)
+                path.lineWidth = 1.5
+                Palette.color(slot).withAlphaComponent(0.16).setFill()
+                path.fill()
+                Palette.color(slot).setStroke()
+                path.stroke()
+            }
+            return true
+        }
+    }
+
+    /// Calls `drawSlot` with each slot of `node` and its rectangle within `rect`.
+    private static func draw(_ node: GridNode, in rect: NSRect, gap: CGFloat, slot drawSlot: (Int, NSRect) -> Void) {
         switch node {
-        case .slot:
-            NSBezierPath(roundedRect: rect, xRadius: 1.5, yRadius: 1.5).fill()
+        case .slot(let slot):
+            drawSlot(slot, rect)
         case .split(let axis, let children):
-            let gap: CGFloat = 1.5
             let count = CGFloat(children.count)
             for (index, child) in children.enumerated() {
                 let offset = CGFloat(index)
@@ -191,11 +214,11 @@ extension GridPreset {
                 case .horizontal:
                     let width = (rect.width - gap * (count - 1)) / count
                     draw(child, in: NSRect(x: rect.minX + offset * (width + gap), y: rect.minY,
-                                           width: width, height: rect.height))
+                                           width: width, height: rect.height), gap: gap, slot: drawSlot)
                 case .vertical:
                     let height = (rect.height - gap * (count - 1)) / count
                     draw(child, in: NSRect(x: rect.minX, y: rect.minY + offset * (height + gap),
-                                           width: rect.width, height: height))
+                                           width: rect.width, height: height), gap: gap, slot: drawSlot)
                 }
             }
         }
