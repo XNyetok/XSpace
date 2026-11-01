@@ -254,6 +254,9 @@ final class UISelfTest: NSObject, NSApplicationDelegate {
             check(false, "Every new profile has its pane")
             return false
         }
+        // The same room on every screen, small ones included (CI runners have 1024 × 768): a pane of
+        // 2 × 2 then has space for the profile's name, the search box and a row of four shortcuts.
+        controller.window?.setFrame(NSRect(x: 0, y: 0, width: 1000, height: 700), display: true)
         check(panes.allSatisfy { $0.isShowingStartPage && $0.webView.url == nil && !$0.webView.isLoading }
               && StateStore.shared.data.profiles.allSatisfy { $0.url == nil },
               "Every pane shows its start page and loads nothing")
@@ -261,7 +264,7 @@ final class UISelfTest: NSObject, NSApplicationDelegate {
         check(controller.focusedPane === panes[0] && firstField?.currentEditor() != nil,
               "The first pane's address field has the keyboard focus")
         check(panes.allSatisfy { $0.testShortcutTitles == ["Tambah pintasan"] },
-              "Without shortcuts a start page offers to add one")
+              "Without shortcuts a start page offers to add one (\(panes[0].testShortcutTitles ?? []))")
 
         // Shortcuts for every profile at once, as the dialog's checkbox adds them.
         let examples = [Shortcut(title: "Example", url: "https://example.com/"),
@@ -273,7 +276,7 @@ final class UISelfTest: NSObject, NSApplicationDelegate {
         let tiles = examples.map(\.title) + ["Tambah pintasan"]
         check(panes.allSatisfy { $0.testShortcutTitles == tiles }
               && StateStore.shared.data.profiles.allSatisfy { $0.shortcuts == examples },
-              "Shortcuts added to every profile show on every start page")
+              "Shortcuts added to every profile show on every start page (\(panes[3].testShortcutTitles ?? []))")
         if let shot = snapshotURL("start") {
             await pause(1)
             await controller.writeSnapshot(to: shot)
@@ -304,7 +307,7 @@ final class UISelfTest: NSObject, NSApplicationDelegate {
         typed.homePane(nil)
         check(typed.isShowingStartPage && typed.webView.isHidden && typed.webView.url?.host == "example.com"
               && controller.focusedPane === typed && typed.testShortcutTitles == tiles,
-              "Beranda shows the start page, with the page waiting behind it")
+              "Beranda shows the start page, with the page waiting behind it (\(typed.testShortcutTitles ?? []))")
         typed.backPane(nil)
         check(!typed.isShowingStartPage && !typed.webView.isHidden && typed.webView.url?.host == "example.com",
               "Kembali on the start page returns to that page")
@@ -314,7 +317,7 @@ final class UISelfTest: NSObject, NSApplicationDelegate {
         check(panes[0].testShortcutTitles == ["Example Org", "Example Net", "Tambah pintasan"]
               && panes[3].testShortcutTitles == tiles
               && StateStore.shared.data.profiles.map(\.shortcuts.count) == [2, 3, 3, 3],
-              "Removing a shortcut removes it from that profile only")
+              "Removing a shortcut removes it from that profile only (\(panes[0].testShortcutTitles ?? []))")
         await pause(1)
         return true
     }

@@ -315,7 +315,7 @@ final class PaneView: NSView, WKNavigationDelegate, WKUIDelegate {
 
     /// The names on the start page's shortcut tiles that are shown, the tile to add one included.
     var testShortcutTitles: [String]? {
-        startPage?.layoutSubtreeIfNeeded()
+        window?.layoutIfNeeded()   // which tiles fit depends on the size of the pane
         return startPage?.testTileTitles
     }
 
