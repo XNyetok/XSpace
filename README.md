@@ -7,7 +7,7 @@ cookies, logins and website data, completely separate from the other profiles. A
 setup: Google AI Studio next to Google Sheets, for several Google accounts, without the
 accounts ever mixing and without a pile of browser windows spread across Spaces.
 
-> **Status:** early prototype (v0.3). macOS 26+. The app UI is in Indonesian for now —
+> **Status:** early prototype (0.x). macOS 26+. The app UI is in Indonesian for now —
 > localization is planned and contributions are welcome.
 >
 > 🇮🇩 Baca dalam Bahasa Indonesia: [README.id.md](README.id.md)
@@ -119,6 +119,8 @@ sign in once per profile; the session is kept.
   user-selected files, Downloads, camera, microphone (see `Support/XSpace.entitlements`).
 - All data stays on your Mac, inside the app's container:
   `~/Library/Containers/io.github.xnyetok.xspace/`.
+- Deleting a profile removes all of its website data (cookies, storage, cache) from the Mac as
+  soon as WebKit releases it, at the latest when XSpace is opened again.
 - No telemetry, analytics or crash reporting. No network requests besides the pages you open.
 - No JavaScript is injected into pages.
 - Two private WebKit APIs (SPI) are used, both checked before use so a future macOS change
@@ -134,7 +136,8 @@ swift test                 # unit tests: address bar, saved state, pane splitter
 APP=build/XSpace.app/Contents/MacOS/XSpace
 $APP --selftest            # profile isolation, Google pages, User-Agent, persistence (write)
 $APP --selftest-persist    # persistence (read back) + cleanup
-$APP --selftest-ui         # real window with throwaway state: freezing + RAM indicator
+$APP --selftest-ui         # real window with throwaway state: freezing, swapping panes,
+                           # deleting a profile, RAM indicator
 ```
 
 All self-tests use their own throwaway profiles and never touch your real ones. Set
@@ -145,7 +148,7 @@ All self-tests use their own throwaway profiles and never touch your real ones. 
 | File | Contents |
 |---|---|
 | `Sources/XSpace/Models.swift` | persisted state; one profile = one `WKWebsiteDataStore` |
-| `Sources/XSpace/WebKitSupport.swift` | web view configuration, Safari User-Agent, downloads, error page |
+| `Sources/XSpace/WebKitSupport.swift` | web view configuration, Safari User-Agent, deleting data stores, downloads, error page |
 | `Sources/XSpace/PaneView.swift` | one pane: mini toolbar + `WKWebView` + navigation/UI delegates |
 | `Sources/XSpace/ProfileRowView.swift` | profile row, pane splitter, grid container |
 | `Sources/XSpace/MainWindowController.swift` | main window, toolbar, profile actions, memory saving |

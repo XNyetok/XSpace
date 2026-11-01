@@ -40,7 +40,8 @@ swift test                                       # unit tests
 XSPACE_WARNINGS_AS_ERRORS=1 ./scripts/build.sh   # build, failing on compiler warnings like CI
 APP=build/XSpace.app/Contents/MacOS/XSpace
 $APP --selftest && $APP --selftest-persist       # isolation, User-Agent, persistence
-$APP --selftest-ui                               # freezing + RAM indicator (opens a window briefly)
+$APP --selftest-ui                               # freezing, swapping panes, deleting a profile,
+                                                 # RAM indicator (opens a window briefly)
 ```
 
 The self-tests use throwaway profiles and never touch your own. CI runs all of the above on
@@ -75,7 +76,8 @@ and regenerate it with `swift scripts/make-icon.swift`.
    `CFBundleVersion`).
 2. In `CHANGELOG.md`, turn "Unreleased" into a section for the new version with today's date,
    add a new empty "Unreleased" section, and update the links at the bottom.
-3. Commit, then push a matching tag: `git tag v0.3.1 && git push origin main v0.3.1`.
+3. Commit and merge the release into `main` like any other change, then push an annotated tag:
+   `git tag -a vX.Y.Z -m "XSpace X.Y.Z" && git push origin vX.Y.Z`.
 
 The Release workflow checks that the tag matches `Info.plist`, builds a universal app, runs the
 self-tests and publishes a GitHub release with `XSpace-<version>.zip`, its SHA-256 checksum and

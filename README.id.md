@@ -7,7 +7,7 @@ login, dan data situs sendiri yang terpisah total dari profil lain. Contoh pemak
 AI Studio di samping Google Sheets untuk beberapa akun Google sekaligus, tanpa akun saling
 bercampur dan tanpa banyak jendela browser yang tersebar di beberapa Space.
 
-> **Status:** prototype awal (v0.3). macOS 26+.
+> **Status:** prototype awal (0.x). macOS 26+.
 >
 > 🇬🇧 English: [README.md](README.md)
 
@@ -119,6 +119,8 @@ profil; sesinya tersimpan.
   pengguna, folder Downloads, kamera, mikrofon (lihat `Support/XSpace.entitlements`).
 - Semua data tetap di Mac, di dalam container app:
   `~/Library/Containers/io.github.xnyetok.xspace/`.
+- Saat profil dihapus, seluruh data situsnya (cookie, penyimpanan, cache) ikut terhapus dari Mac
+  begitu WebKit melepasnya, paling lambat saat XSpace dibuka lagi.
 - Tanpa telemetri, analitik, atau crash reporting. Tidak ada request jaringan selain halaman yang
   kamu buka.
 - Tidak ada JavaScript yang disuntikkan ke halaman.
@@ -135,7 +137,8 @@ swift test                 # unit test: kolom alamat, state tersimpan, pembagi p
 APP=build/XSpace.app/Contents/MacOS/XSpace
 $APP --selftest            # isolasi profil, halaman Google, User-Agent, persistensi (tulis)
 $APP --selftest-persist    # persistensi (baca ulang) + bersih-bersih
-$APP --selftest-ui         # jendela sungguhan dengan state sementara: pembekuan + indikator RAM
+$APP --selftest-ui         # jendela sungguhan dengan state sementara: pembekuan, tukar pane,
+                           # hapus profil, indikator RAM
 ```
 
 Semua self-test memakai profil uji sementara dan tidak menyentuh profil asli. Set
@@ -146,7 +149,7 @@ Semua self-test memakai profil uji sementara dan tidak menyentuh profil asli. Se
 | File | Isi |
 |---|---|
 | `Sources/XSpace/Models.swift` | state yang disimpan; satu profil = satu `WKWebsiteDataStore` |
-| `Sources/XSpace/WebKitSupport.swift` | konfigurasi webview, User-Agent Safari, unduhan, halaman error |
+| `Sources/XSpace/WebKitSupport.swift` | konfigurasi webview, User-Agent Safari, penghapusan data store, unduhan, halaman error |
 | `Sources/XSpace/PaneView.swift` | satu pane: toolbar mini + `WKWebView` + delegate navigasi/UI |
 | `Sources/XSpace/ProfileRowView.swift` | baris profil, pembagi pane, container grid |
 | `Sources/XSpace/MainWindowController.swift` | jendela utama, toolbar, aksi profil, hemat RAM |
