@@ -286,6 +286,21 @@ final class SavedStateTests: XCTestCase {
         XCTAssertEqual(automatic.shownProfiles, [automatic.profiles[0].id])
     }
 
+    func testAfterTheLastProfileIsDeletedXSpaceStartsOver() {
+        var state = state(profiles: 1)
+        state.switchLayout(to: .twoColumns, active: nil)
+        let id = state.profiles[0].id
+        state.removeProfile(id)
+        XCTAssertTrue(state.profiles.isEmpty)
+        XCTAssertEqual(state.shownProfiles, [nil, nil])
+        XCTAssertNil(state.selectedProfileID)
+        XCTAssertEqual(state.pendingDeletion, [id])
+        state.start(with: .oneAndTwo)
+        XCTAssertEqual(state.layout, .oneAndTwo, "the welcome screen starts over")
+        XCTAssertEqual(state.shownProfiles, ids(state).map { $0 })
+        XCTAssertEqual(state.profiles.map(\.name), ["Akun 1", "Akun 2", "Akun 3"])
+    }
+
     func testThereIsOnlyOneFirstStart() {
         var state = state(profiles: 2)
         let before = ids(state)

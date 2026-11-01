@@ -5,9 +5,10 @@ import WebKit
 /// `XSpace --selftest-ui [shot.png]`: runs the real XSpace window with THROWAWAY state
 /// (temporary folder + new test profiles), checks upgrading from 0.5.0, freezing, the layouts,
 /// showing and swapping profiles, the keyboard focus, the RAM indicator, deleting a profile and
-/// the first start (welcome screen, start pages), then deletes everything. Real profiles are never
-/// touched. With a .png argument it also saves snapshots: shot.png of the 1 + 3 layout,
-/// shot-welcome.png of the welcome screen and shot-start.png of the start pages.
+/// the first start (welcome screen, start pages, deleting the last profile), then deletes
+/// everything. Real profiles are never touched. With a .png argument it also saves snapshots:
+/// shot.png of the 1 + 3 layout, shot-welcome.png of the welcome screen and shot-start.png of the
+/// start pages.
 @MainActor
 final class UISelfTest: NSObject, NSApplicationDelegate {
     private static let aiStudio = "https://aistudio.google.com/"
@@ -183,7 +184,8 @@ final class UISelfTest: NSObject, NSApplicationDelegate {
 
     /// [8]: a window without saved state shows the welcome screen and makes no profile; choosing a
     /// layout there makes a profile for each pane, every one on its start page; typing an address
-    /// opens it. Returns the removals of the data stores of the profiles it made.
+    /// opens it; deleting the last profile brings the welcome screen back. Returns the removals of
+    /// the data stores of the profiles it made.
     private func checkFirstStart() async -> [DataStoreRemoval] {
         StateStore.shared.data = AppStateData()
         let controller = MainWindowController()
@@ -222,15 +224,37 @@ final class UISelfTest: NSObject, NSApplicationDelegate {
 
         welcome.cards.first { $0.preset == .twoByTwo }?.performClick(nil)
         let names = ["Akun 1", "Akun 2", "Akun 3", "Akun 4"]
-        let panes = names.compactMap { controller.testPane($0) }
-        let profiles = StateStore.shared.data.profiles
         check(controller.testWelcome == nil && !controller.testGrid.isHidden && toolbarItems().allSatisfy { !$0.isHidden }
-              && StateStore.shared.data.layout == .twoByTwo && controller.testShown == names && panes.count == 4,
+              && StateStore.shared.data.layout == .twoByTwo && controller.testShown == names,
               "Choosing 2 × 2 makes four profiles, one in each pane (\(controller.testShown.map { $0 ?? "-" }))")
         check(controller.window?.frame == welcomeFrame, "The window keeps its size")
-        guard panes.count == 4 else { return finish() }
+        // Only checkStartPages holds the panes: a pane keeps its profile's data store alive, and
+        // deleting the profiles below waits until their stores are released.
+        guard await checkStartPages(controller, names: names) else { return finish() }
+
+        // Deleting every profile, the last one included, brings the welcome screen back. The app
+        // deletes their data stores; [9] checks that they are gone.
+        let removals = controller.profiles.map { DataStoreRemoval($0.store) }
+        for id in controller.profiles.map(\.id) {
+            await controller.testDelete(id)
+        }
+        check(controller.testWelcome != nil && controller.profiles.isEmpty && StateStore.shared.data.profiles.isEmpty
+              && controller.testGrid.isHidden && toolbarItems().allSatisfy(\.isHidden),
+              "Deleting the last profile brings the welcome screen back")
+        controller.close()
+        return removals
+    }
+
+    /// [8], continued: the panes of 2 × 2 on their start pages, the keyboard focus, and an address
+    /// typed in one of them. False if a pane is missing.
+    private func checkStartPages(_ controller: MainWindowController, names: [String]) async -> Bool {
+        let panes = names.compactMap { controller.testPane($0) }
+        guard panes.count == 4 else {
+            check(false, "Every new profile has its pane")
+            return false
+        }
         check(panes.allSatisfy { $0.isShowingStartPage && $0.webView.url == nil && !$0.webView.isLoading }
-              && profiles.allSatisfy { $0.url == nil },
+              && StateStore.shared.data.profiles.allSatisfy { $0.url == nil },
               "Every pane shows its start page and loads nothing")
         let firstField = panes[0].focusTarget as? NSTextField
         check(controller.focusedPane === panes[0] && firstField?.currentEditor() != nil,
@@ -256,7 +280,7 @@ final class UISelfTest: NSObject, NSApplicationDelegate {
         check(panes[0].isShowingStartPage && panes[2].isShowingStartPage && panes[3].isShowingStartPage,
               "The other panes stay on their start page")
         await pause(1)
-        return finish()
+        return true
     }
 
     /// [4]: switching layouts, swapping, sizes, empty slots, new profiles, showing a hidden profile,

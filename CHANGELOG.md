@@ -15,6 +15,7 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 - A new profile shows the start page instead of opening Google AI Studio.
+- The last profile can be deleted too: XSpace then shows the welcome screen again.
 
 ## [0.6.0] - 2026-11-01
 

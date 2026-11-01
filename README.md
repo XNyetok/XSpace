@@ -87,7 +87,7 @@ that. Developer ID signatures also get the secure timestamp that notarization re
 | Only the profile you are in, and back | ⌃⌘G (**Tampilan → Tampilkan Satu Profil**) |
 | Swap two panes | the ⇄ button between two panes side by side, or ⌃⌘X for the pane you are in and the next one |
 | Add a profile | **+** button or ⇧⌘N: it fills an empty slot, or the pane you are in |
-| Rename, recolor or delete a profile | **⋯** button or the **Profil** menu |
+| Rename, recolor or delete a profile | **⋯** button or the **Profil** menu; deleting the last one brings back the welcome screen |
 | Address bar of the focused pane | ⌘L |
 | Reload / back / forward | ⌘R / ⌘[ / ⌘] |
 | Zoom a pane | ⌘= / ⌘- / ⌘0 |

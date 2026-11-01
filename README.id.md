@@ -87,7 +87,7 @@ notarisasi.
 | Hanya profil yang aktif, lalu kembali | ⌃⌘G (**Tampilan → Tampilkan Satu Profil**) |
 | Tukar posisi dua pane | tombol ⇄ di antara dua pane yang berdampingan, atau ⌃⌘X untuk pane aktif dan pane berikutnya |
 | Tambah profil | tombol **+** atau ⇧⌘N: mengisi slot kosong, atau pane yang aktif |
-| Ganti nama/warna atau hapus profil | tombol **⋯** atau menu **Profil** |
+| Ganti nama/warna atau hapus profil | tombol **⋯** atau menu **Profil**; menghapus profil terakhir memunculkan layar sambutan lagi |
 | Kolom alamat pane aktif | ⌘L |
 | Muat ulang / kembali / maju | ⌘R / ⌘[ / ⌘] |
 | Zoom pane | ⌘= / ⌘- / ⌘0 |

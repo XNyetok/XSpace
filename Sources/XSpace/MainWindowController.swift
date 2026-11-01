@@ -264,6 +264,12 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         // Without profiles (the welcome screen) one empty segment stays: the toolbar measures the
         // control even while its item is hidden, and warns about one without width.
         profileSwitcher.segmentCount = max(profiles.count, 1)
+        if profiles.isEmpty {
+            profileSwitcher.setLabel("", forSegment: 0)
+            profileSwitcher.setImage(nil, forSegment: 0)
+            profileSwitcher.setToolTip(nil, forSegment: 0)
+            profileSwitcher.setSelected(false, forSegment: 0)
+        }
         for (index, profile) in profiles.enumerated() {
             profileSwitcher.setLabel(profile.name, forSegment: index)
             profileSwitcher.setImage(Palette.dot(profile.color), forSegment: index)
@@ -731,7 +737,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
 
     @objc func renameProfile(_ sender: Any?) {
         guard let window, let profile = activeProfile else { return }
-        askForText(title: "Ganti nama profil", message: "Nama hanya label; tidak mengubah akun Google-nya.",
+        askForText(title: "Ganti nama profil", message: "Nama hanya label; tidak mengubah akun di situs mana pun.",
                    defaultValue: profile.name, confirm: "Simpan", in: window) { [weak self] name in
             guard let self, let name else { return }
             profile.name = name
@@ -753,20 +759,16 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         rebuildSwitcher()
     }
 
+    /// Deleting the last profile brings back the welcome screen.
     @objc func deleteProfile(_ sender: Any?) {
         guard let window, let profile = activeProfile else { return }
-        guard profiles.count > 1 else {
-            let alert = NSAlert()
-            alert.messageText = "Profil terakhir tidak bisa dihapus"
-            alert.informativeText = "Tambahkan profil lain dulu."
-            alert.beginSheetModal(for: window)
-            return
-        }
         let id = profile.id
         let alert = NSAlert()
         alert.alertStyle = .warning
         alert.messageText = "Hapus profil “\(profile.name)”?"
-        alert.informativeText = "Semua login, cookie, dan data situs di profil ini akan dihapus permanen dari Mac ini. Akun Google-nya sendiri tidak terpengaruh."
+        alert.informativeText = "Semua login, cookie, dan data situs di profil ini akan dihapus permanen dari Mac ini. "
+            + "Akun di situs-situsnya sendiri tidak terpengaruh."
+            + (profiles.count == 1 ? " Ini profil terakhir: XSpace kembali ke layar sambutan." : "")
         alert.addButton(withTitle: "Hapus")
         alert.addButton(withTitle: "Batal")
         alert.buttons.first?.hasDestructiveAction = true
@@ -834,7 +836,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         case #selector(toggleSingleProfile(_:)):
             menuItem.state = state.data.layout == .single ? .on : .off
             return !profiles.isEmpty
-        case #selector(renameProfile(_:)), #selector(cycleProfileColor(_:)):
+        case #selector(renameProfile(_:)), #selector(cycleProfileColor(_:)), #selector(deleteProfile(_:)):
             return activeProfile != nil
         case #selector(setHibernatePolicy(_:)):
             menuItem.state = (menuItem.representedObject as? String) == state.data.hibernatePolicy.rawValue ? .on : .off
@@ -843,8 +845,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         case #selector(selectProfileFromMenu(_:)):
             let isShown = profiles.indices.contains(menuItem.tag) && state.data.isShown(profiles[menuItem.tag].id)
             menuItem.state = isShown ? .on : .off
-        case #selector(deleteProfile(_:)):
-            return profiles.count > 1
         case #selector(swapPanes(_:)):
             return state.data.shownProfiles.count > 1
         case #selector(reloadPane(_:)), #selector(backPane(_:)), #selector(forwardPane(_:)),
