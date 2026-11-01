@@ -1,0 +1,254 @@
+import Foundation
+
+// MARK: - Workspaces (persisted in state.json)
+
+/// How a split arranges its children: side by side (horizontal) or stacked from top to bottom
+/// (vertical).
+enum SplitAxis: String, Codable {
+    case horizontal
+    case vertical
+}
+
+/// One pane of a workspace: a page shown in one profile.
+struct LayoutPane: Codable, Equatable {
+    var id: UUID
+    var profileID: UUID
+    var url: String
+}
+
+/// Children side by side or stacked, each with a share of the space.
+struct LayoutSplit: Codable, Equatable {
+    var id: UUID
+    var axis: SplitAxis
+    var children: [LayoutNode]
+    /// Relative sizes of the children, in their order (nil = equal).
+    var ratios: [Double]?
+}
+
+/// A workspace's layout is a tree: each node is a pane or a split of further nodes.
+/// In state.json a node is written as {"pane": {…}} or {"split": {…}}.
+enum LayoutNode: Equatable {
+    case pane(LayoutPane)
+    case split(LayoutSplit)
+}
+
+/// A saved arrangement of panes. Each pane can show any profile, so one workspace can show
+/// several accounts at once. Every profile from 0.5.0 became a workspace with the same panes.
+struct WorkspaceState: Codable, Equatable {
+    var id: UUID
+    /// nil = named after the profiles of its panes.
+    var name: String?
+    var root: LayoutNode
+}
+
+extension LayoutNode: Codable {
+    private enum CodingKeys: String, CodingKey {
+        case pane
+        case split
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        if let pane = try container.decodeIfPresent(LayoutPane.self, forKey: .pane) {
+            self = .pane(pane)
+        } else if let split = try container.decodeIfPresent(LayoutSplit.self, forKey: .split) {
+            self = .split(split)
+        } else {
+            throw DecodingError.dataCorrupted(.init(codingPath: container.codingPath,
+                                                    debugDescription: "A layout node is a pane or a split"))
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        switch self {
+        case .pane(let pane): try container.encode(pane, forKey: .pane)
+        case .split(let split): try container.encode(split, forKey: .split)
+        }
+    }
+}
+
+// MARK: - Reading and changing a layout
+
+extension LayoutNode {
+    /// The panes in reading order: left to right, top to bottom.
+    var panes: [LayoutPane] {
+        switch self {
+        case .pane(let pane): return [pane]
+        case .split(let split): return split.children.flatMap(\.panes)
+        }
+    }
+
+    func contains(profile id: UUID) -> Bool {
+        panes.contains { $0.profileID == id }
+    }
+
+    /// The same layout with every pane passed through `transform`.
+    func mapPanes(_ transform: (LayoutPane) -> LayoutPane) -> LayoutNode {
+        switch self {
+        case .pane(let pane):
+            return .pane(transform(pane))
+        case .split(var split):
+            split.children = split.children.map { $0.mapPanes(transform) }
+            return .split(split)
+        }
+    }
+
+    /// The same layout with the split `id` changed by `change`.
+    func updatingSplit(_ id: UUID, _ change: (inout LayoutSplit) -> Void) -> LayoutNode {
+        guard case .split(var split) = self else { return self }
+        if split.id == id {
+            change(&split)
+        } else {
+            split.children = split.children.map { $0.updatingSplit(id, change) }
+        }
+        return .split(split)
+    }
+
+    /// The layout without the panes `shouldRemove` picks, or nil if no pane is left. A split left
+    /// with one child is replaced by that child; the other children keep their shares.
+    func removingPanes(where shouldRemove: (LayoutPane) -> Bool) -> LayoutNode? {
+        switch self {
+        case .pane(let pane):
+            return shouldRemove(pane) ? nil : self
+        case .split(var split):
+            var children: [LayoutNode] = []
+            var shares: [Double] = []
+            for (index, child) in split.children.enumerated() {
+                guard let kept = child.removingPanes(where: shouldRemove) else { continue }
+                children.append(kept)
+                if let ratios = split.ratios, index < ratios.count { shares.append(ratios[index]) }
+            }
+            guard children.count > 1 else { return children.first }
+            split.ratios = split.ratios != nil && shares.count == children.count ? shares : nil
+            split.children = children
+            return .split(split)
+        }
+    }
+
+    /// The same layout without sizes that cannot be applied: a split's ratios must be one
+    /// positive number per child, otherwise its children share the space equally.
+    func withValidRatios() -> LayoutNode {
+        guard case .split(var split) = self else { return self }
+        split.children = split.children.map { $0.withValidRatios() }
+        if let ratios = split.ratios,
+           ratios.count != split.children.count || !ratios.allSatisfy({ $0.isFinite && $0 > 0 }) {
+            split.ratios = nil
+        }
+        return .split(split)
+    }
+
+    /// The same layout with a new ID for every node whose ID is already in `seen`.
+    func withUniqueIDs(seen: inout Set<UUID>) -> LayoutNode {
+        switch self {
+        case .pane(var pane):
+            pane.id = uniqueID(pane.id, seen: &seen)
+            return .pane(pane)
+        case .split(var split):
+            split.id = uniqueID(split.id, seen: &seen)
+            var children: [LayoutNode] = []
+            for child in split.children {
+                children.append(child.withUniqueIDs(seen: &seen))
+            }
+            split.children = children
+            return .split(split)
+        }
+    }
+
+    /// For a layout that is only panes of `profileID` side by side: their widths (nil = equal).
+    fileprivate func sideBySideRatios(of profileID: UUID) -> [Double]? {
+        guard case .split(let split) = self, split.axis == .horizontal else { return nil }
+        let onlyThatProfile = split.children.allSatisfy { child in
+            if case .pane(let pane) = child { return pane.profileID == profileID }
+            return false
+        }
+        return onlyThatProfile ? split.ratios : nil
+    }
+}
+
+extension LayoutSplit {
+    /// Swaps the child at `index` with the next one; each keeps its share of the space.
+    mutating func swapChildren(at index: Int) {
+        guard index >= 0, index + 1 < children.count else { return }
+        children.swapAt(index, index + 1)
+        if var shares = ratios, index + 1 < shares.count {
+            shares.swapAt(index, index + 1)
+            ratios = shares
+        }
+    }
+}
+
+/// `id`, or a new ID if `id` is already taken.
+private func uniqueID(_ id: UUID, seen: inout Set<UUID>) -> UUID {
+    if seen.insert(id).inserted { return id }
+    let fresh = UUID()
+    seen.insert(fresh)
+    return fresh
+}
+
+// MARK: - Creating, checking and migrating workspaces
+
+extension WorkspaceState {
+    /// The workspace a 0.5.0 profile becomes: its panes side by side, with the same widths.
+    init(migrating profile: ProfileState) {
+        self.init(sideBySide: profile.panes.map(\.url), of: profile.id, ratios: profile.splitRatios)
+    }
+
+    /// A new profile's workspace: the default panes (Google AI Studio | Google Sheets).
+    init(defaultFor profileID: UUID) {
+        self.init(sideBySide: Defaults.paneURLs, of: profileID, ratios: nil)
+    }
+
+    /// Panes of one profile side by side (the default panes if `urls` is empty). A single pane is
+    /// the whole layout.
+    init(sideBySide urls: [String], of profileID: UUID, ratios: [Double]?) {
+        let panes = (urls.isEmpty ? Defaults.paneURLs : urls).map {
+            LayoutNode.pane(LayoutPane(id: UUID(), profileID: profileID, url: $0))
+        }
+        let root = panes.count == 1
+            ? panes[0]
+            : LayoutNode.split(LayoutSplit(id: UUID(), axis: .horizontal, children: panes, ratios: ratios))
+        self.init(id: UUID(), name: nil, root: root.withValidRatios())
+    }
+
+    /// Workspaces as XSpace shows them, from whatever state.json contained: panes of profiles that
+    /// do not exist are dropped, sizes that do not fit are reset, splits with one child are
+    /// replaced by it, duplicate IDs get new ones and workspaces without panes are removed.
+    /// A profile that no workspace shows gets a workspace of its own (its 0.5.0 panes, or the
+    /// default ones), so every profile can still be opened, renamed and deleted.
+    static func normalized(_ workspaces: [WorkspaceState], profiles: [ProfileState]) -> [WorkspaceState] {
+        let known = Set(profiles.map(\.id))
+        var seen = Set<UUID>()
+        var result: [WorkspaceState] = []
+        for var workspace in workspaces {
+            guard let root = workspace.root
+                .withValidRatios()
+                .removingPanes(where: { !known.contains($0.profileID) })
+            else { continue }
+            workspace.id = uniqueID(workspace.id, seen: &seen)
+            workspace.root = root.withUniqueIDs(seen: &seen)
+            result.append(workspace)
+        }
+        let shown = Set(result.flatMap { $0.root.panes.map(\.profileID) })
+        for profile in profiles where !shown.contains(profile.id) {
+            result.append(WorkspaceState(migrating: profile))
+        }
+        return result
+    }
+
+    /// The profiles as 0.5.0 reads them from state.json. 0.5.0 knows panes per profile and no
+    /// workspaces, so each profile gets its panes from the first workspace that shows it, and
+    /// its widths if that workspace is only its panes side by side (as every workspace migrated
+    /// from 0.5.0 is). A profile that no workspace shows keeps what it had.
+    static func legacyProfiles(_ profiles: [ProfileState], from workspaces: [WorkspaceState]) -> [ProfileState] {
+        profiles.map { profile in
+            guard let workspace = workspaces.first(where: { $0.root.contains(profile: profile.id) }) else {
+                return profile
+            }
+            var mirrored = profile
+            mirrored.panes = workspace.root.panes.filter { $0.profileID == profile.id }.map { PaneState(url: $0.url) }
+            mirrored.splitRatios = workspace.root.sideBySideRatios(of: profile.id)
+            return mirrored
+        }
+    }
+}
