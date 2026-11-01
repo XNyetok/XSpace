@@ -125,9 +125,9 @@ enum WebKitSupport {
 /// Deletes a data store once WebKit has released it. WebKit refuses to delete a store that still
 /// exists, and after the store's last web view is gone it keeps the store for a while, until
 /// around the time the closed pages' processes exit: a fraction of a second on macOS 15 and 27,
-/// several seconds on macOS 26 (measured in CI). Waiting for the release itself replaces guessing
-/// a number of retries. Holds the store weakly: create this while the store is still referenced,
-/// drop every other reference to it, then call `remove()`.
+/// several seconds on macOS 26 (measured in CI). Waiting for the release replaces guessing how
+/// long the store stays in use. Holds the store weakly: create this while the store is still
+/// referenced, drop every other reference to it, then call `remove()`.
 @MainActor
 final class DataStoreRemoval {
     let id: UUID?
@@ -150,12 +150,31 @@ final class DataStoreRemoval {
         while store != nil, Date().timeIntervalSince(start) < timeout, !Task.isCancelled {
             try? await Task.sleep(nanoseconds: 100_000_000)
         }
-        let held = store == nil ? "" : "still in use after \(Int(Date().timeIntervalSince(start))) s; "
-        do {
-            try await WKWebsiteDataStore.remove(forIdentifier: id)
-            return nil
-        } catch {
-            return held + "WebKit: \(error.localizedDescription)"
+        if store != nil {
+            // Never released: one attempt, only to report WebKit's reason.
+            do {
+                try await WKWebsiteDataStore.remove(forIdentifier: id)
+                return nil
+            } catch {
+                return "still in use after \(Int(Date().timeIntervalSince(start))) s; WebKit: \(error.localizedDescription)"
+            }
+        }
+        // Right after the release, WebKit's network process can still be finishing writes to the
+        // store's network cache. Deleting the folder then fails ("Failed to delete files on disk")
+        // and works a moment later (measured in CI on macOS 15), so retry for a few seconds.
+        let released = Date()
+        while true {
+            do {
+                try await WKWebsiteDataStore.remove(forIdentifier: id)
+                return nil
+            } catch {
+                // A store that WebKit no longer lists is gone, whatever the error said.
+                if !(await WKWebsiteDataStore.allDataStoreIdentifiers).contains(id) { return nil }
+                if Date().timeIntervalSince(released) >= 5 || Task.isCancelled {
+                    return "WebKit: \(error.localizedDescription)"
+                }
+            }
+            try? await Task.sleep(nanoseconds: 250_000_000)
         }
     }
 }
