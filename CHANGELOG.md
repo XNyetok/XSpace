@@ -6,6 +6,22 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- Workspaces: every entry in the toolbar is now a layout of panes, side by side and stacked, and
+  each pane can show any profile, so one workspace can show several accounts at once. Existing
+  profiles became workspaces with the same panes. XSpace 0.5.0 can still open the saved state
+  and shows every profile with its panes.
+- Show a pane in another profile: click the profile name at the left of the pane's toolbar, or
+  use **Pane → Ganti Profil Pane**. The page opens again in that profile.
+- Split a pane to the right or down (⌃⌘→ / ⌃⌘↓, the new **Pane** menu, or the profile name's
+  menu, where the new pane can start in any profile), and close a pane (⌃⌘W). For example: one
+  tall pane on the left and three stacked on the right.
+
+### Changed
+- The pane and profile commands act on the pane you are in. **Tukar Posisi Pane** (⌃⌘X) swaps it
+  with its neighbor, also when the panes are stacked, and moved to the **Pane** menu together
+  with **Atur Ulang Pane ke Default**.
+
 ### Fixed
 - If XSpace cannot read its saved state (`state.json`), for example because the file is damaged,
   it now moves the file aside as `state-unreadable-<date>.json` before starting over. Before, it

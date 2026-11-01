@@ -24,9 +24,10 @@ bercampur dan tanpa banyak jendela browser yang tersebar di beberapa Space.
 ## Fitur
 
 - Profil dengan data situs terisolasi penuh (satu `WKWebsiteDataStore(forIdentifier:)` per profil)
-- Pane berdampingan dalam satu profil (default: Google AI Studio | Google Sheets), bisa diubah
-  lebarnya dan ditukar posisinya
-- Mode **Fokus** (satu profil) dan **Semua** (semua profil ditumpuk sebagai grid)
+- Ruang kerja: pane berdampingan dan bertumpuk, bisa diubah ukurannya dan ditukar posisinya,
+  masing-masing di profil pilihan Anda, jadi satu ruang kerja bisa menampilkan beberapa akun
+  sekaligus (profil baru dimulai dengan Google AI Studio | Google Sheets)
+- Mode **Fokus** (satu ruang kerja) dan **Semua** (semua ruang kerja ditumpuk sebagai grid)
 - Warna per profil dan bingkai pane, supaya selalu jelas sedang di akun mana
 - Popup dan jendela login tetap di dalam profilnya
 - Hemat RAM: lazy load, pembekuan otomatis profil tersembunyi, indikator RAM
@@ -77,16 +78,22 @@ notarisasi.
 
 | Aksi | Cara |
 |---|---|
-| Pindah profil | klik di toolbar, atau ⌘1–⌘9 |
-| Tambah profil | tombol **+** atau ⇧⌘N |
-| Ganti nama/warna, reset pane, hapus profil | tombol **⋯** atau menu **Profil** |
-| Satu profil / semua profil sekaligus | **Fokus / Semua** di kanan atas, atau ⌃⌘G |
+| Pindah ruang kerja | klik di toolbar (namanya mengikuti profilnya), atau ⌘1–⌘9 |
+| Tambah profil (dengan ruang kerjanya sendiri) | tombol **+** atau ⇧⌘N |
+| Ganti nama/warna atau hapus profil | tombol **⋯** atau menu **Profil** |
+| Satu ruang kerja / semua sekaligus | **Fokus / Semua** di kanan atas, atau ⌃⌘G |
+| Tampilkan pane di profil lain | klik nama profil di kiri toolbar pane, atau menu **Pane → Ganti Profil Pane** |
+| Bagi pane | menu nama profil (pane baru bisa langsung di profil lain), **Pane → Bagi ke Kanan / Bagi ke Bawah**, atau ⌃⌘→ / ⌃⌘↓ |
+| Tutup pane | menu nama profil, **Pane → Tutup Pane**, atau ⌃⌘W |
+| Tukar posisi dua pane | tombol ⇄ di antara pane yang berdampingan, atau ⌃⌘X (**Pane → Tukar Posisi Pane**) untuk sebuah pane dan tetangganya |
+| Kembali ke pane default | tombol **⋯** atau **Pane → Atur Ulang Pane ke Default** |
 | Kolom alamat pane aktif | ⌘L |
 | Muat ulang / kembali / maju | ⌘R / ⌘[ / ⌘] |
 | Zoom pane | ⌘= / ⌘- / ⌘0 |
-| Ubah lebar pane | geser pembatas; klik dua kali = rata lagi |
-| Tukar posisi dua pane | tombol ⇄ di antara pane, ⌃⌘X, atau menu **Profil → Tukar Posisi Pane** |
+| Ubah ukuran pane | geser pembatas; klik dua kali = rata lagi |
 | Pemakaian & pengaturan hemat RAM | indikator **RAM …**, atau menu **Tampilan → Hemat RAM** |
+
+Perintah pane dan profil berlaku untuk pane yang aktif, yaitu yang sedang menerima ketikan.
 
 ### Hemat RAM
 
@@ -138,8 +145,8 @@ APP=build/XSpace.app/Contents/MacOS/XSpace
 $APP --selftest            # isolasi profil, halaman Google, User-Agent, persistensi (tulis)
 $APP --selftest-persist    # persistensi (baca ulang) + bersih-bersih
 $APP --selftest-ui         # jendela sungguhan dengan state sementara: upgrade dari 0.5.0,
-                           # pembekuan, tukar pane, ruang kerja dengan beberapa profil,
-                           # hapus profil, indikator RAM
+                           # pembekuan, tukar/bagi/tutup pane, ruang kerja dengan beberapa
+                           # profil, hapus profil, indikator RAM
 ```
 
 Semua self-test memakai profil uji sementara dan tidak menyentuh profil asli. Set

@@ -25,9 +25,10 @@ accounts ever mixing and without a pile of browser windows spread across Spaces.
 ## Features
 
 - Profiles with fully isolated website data (one `WKWebsiteDataStore(forIdentifier:)` each)
-- Panes side by side within a profile (default: Google AI Studio | Google Sheets), resizable
-  and swappable
-- **Focus** mode (one profile) and **All** mode (every profile stacked in a grid)
+- Workspaces: panes side by side and stacked, resizable and swappable, each in the profile you
+  choose, so one workspace can show several accounts at once (a new profile starts with Google
+  AI Studio | Google Sheets)
+- **Focus** mode (one workspace) and **All** mode (every workspace stacked in a grid)
 - Color-coded profiles and pane borders, so you always know which account you are in
 - Popups and sign-in windows stay inside their profile
 - Memory saving: lazy loading, automatic freezing of hidden profiles, RAM indicator
@@ -77,16 +78,22 @@ that. Developer ID signatures also get the secure timestamp that notarization re
 
 | Action | How |
 |---|---|
-| Switch profile | click it in the toolbar, or ⌘1–⌘9 |
-| Add a profile | **+** button or ⇧⌘N |
-| Rename, recolor, reset panes, delete | **⋯** button or the **Profil** menu |
-| One profile / all profiles | **Fokus / Semua** (top right) or ⌃⌘G |
+| Switch workspace | click it in the toolbar (it is named after its profiles), or ⌘1–⌘9 |
+| Add a profile (in a workspace of its own) | **+** button or ⇧⌘N |
+| Rename, recolor or delete a profile | **⋯** button or the **Profil** menu |
+| One workspace / all of them | **Fokus / Semua** (top right) or ⌃⌘G |
+| Show a pane in another profile | click the profile name at the left of the pane's toolbar, or **Pane → Ganti Profil Pane** |
+| Split a pane | the profile name's menu (the new pane can start in any profile), **Pane → Bagi ke Kanan / Bagi ke Bawah**, or ⌃⌘→ / ⌃⌘↓ |
+| Close a pane | the profile name's menu, **Pane → Tutup Pane**, or ⌃⌘W |
+| Swap two panes | the ⇄ button between panes side by side, or ⌃⌘X (**Pane → Tukar Posisi Pane**) for a pane and its neighbor |
+| Back to the default panes | **⋯** button or **Pane → Atur Ulang Pane ke Default** |
 | Address bar of the focused pane | ⌘L |
 | Reload / back / forward | ⌘R / ⌘[ / ⌘] |
 | Zoom a pane | ⌘= / ⌘- / ⌘0 |
 | Resize panes | drag the divider; double-click it to equalize |
-| Swap the two panes | the ⇄ button between them, ⌃⌘X, or **Profil → Tukar Posisi Pane** |
 | Memory usage and saving | the **RAM …** indicator, or **Tampilan → Hemat RAM** |
+
+The pane and profile commands act on the pane you are in: the one with the keyboard focus.
 
 ### Memory saving
 
@@ -137,8 +144,8 @@ APP=build/XSpace.app/Contents/MacOS/XSpace
 $APP --selftest            # profile isolation, Google pages, User-Agent, persistence (write)
 $APP --selftest-persist    # persistence (read back) + cleanup
 $APP --selftest-ui         # real window with throwaway state: upgrading from 0.5.0, freezing,
-                           # swapping panes, a workspace with several profiles, deleting a
-                           # profile, RAM indicator
+                           # swapping, splitting and closing panes, a workspace with several
+                           # profiles, deleting a profile, RAM indicator
 ```
 
 All self-tests use their own throwaway profiles and never touch your real ones. Set
