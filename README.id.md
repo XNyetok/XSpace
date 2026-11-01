@@ -94,7 +94,7 @@ notarisasi.
 | Ganti nama/warna atau hapus profil | tombol **⋯** atau menu **Profil**; menghapus profil terakhir memunculkan layar sambutan lagi |
 | Kolom alamat pane aktif | ⌘L |
 | Muat ulang / kembali / maju | ⌘R / ⌘[ / ⌘] |
-| Zoom pane | otomatis (lihat [Zoom](#zoom)); ⌘= / ⌘- memperbesar atau memperkecil pane yang aktif dari situ, ⌘0 kembali ke zoom otomatis |
+| Zoom pane | otomatis (lihat [Zoom](#zoom)); **+** / **−** di kanan toolbar pane, atau ⌘= / ⌘- di pane yang aktif, memperbesar atau memperkecil pane itu dari situ; klik angka zoom-nya, atau tekan ⌘0, untuk kembali ke zoom otomatis |
 | Ubah ukuran pane | geser pembatas; klik dua kali = rata lagi; ⌃⌘0 (**Tampilan → Atur Ulang Ukuran Pane**, juga di bagian bawah menu **Tata Letak**) mengembalikan pane di tata letak itu ke ukuran bawaannya |
 | Pemakaian & pengaturan hemat RAM | indikator **RAM …**, atau menu **Tampilan → Hemat RAM** |
 
@@ -108,10 +108,12 @@ halaman tetap disusun seperti di jendela browser, bukan berpindah ke tampilan un
 ponsel. Di MacBook Air 13 inci, satu profil tetap 100% dan pane di tata letak lain 70%. Selama
 pembatas atau jendela sedang digeser, zoom menunggu sampai tombol mouse dilepas.
 
-⌘= dan ⌘- memperbesar atau memperkecil halaman pane yang aktif dari situ, per 10%; profilnya
-mengingat ini, juga setelah dibekukan dan setelah XSpace ditutup. ⌘0 (**Tampilan → Atur Ulang
-Zoom**) kembali ke zoom otomatis. Untuk menampilkan semua halaman 100%, matikan **Tampilan → Zoom
-Otomatis**.
+Setiap pane menampilkan zoom-nya di kanan toolbar. **+** dan **−** di sebelahnya (atau ⌘= dan ⌘-
+di pane yang aktif) memperbesar atau memperkecil halaman itu dari zoom otomatis, per 10%: angka
+zoom-nya lalu berwarna aksen, dan profilnya mengingat ini, juga setelah dibekukan dan setelah
+XSpace ditutup. Klik angka zoom itu, atau tekan ⌘0 (**Tampilan → Atur Ulang Zoom**), untuk kembali
+ke zoom otomatis. Pane yang lebih sempit dari 320 poin tidak menampilkan tombol-tombol ini di
+toolbarnya. Untuk menampilkan semua halaman 100%, matikan **Tampilan → Zoom Otomatis**.
 
 Zoom yang lebih kecil tidak menghemat CPU: halaman di pane kecil memakai CPU kurang lebih sama
 dengan di pane besar. Yang menghemat CPU dan RAM adalah profil yang tidak tampil (lihat di bawah).

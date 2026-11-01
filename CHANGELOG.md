@@ -25,6 +25,10 @@ All notable changes to this project are documented here. The format follows
   smaller, in steps of 5% down to 70%, so sites keep the layout they have in a browser window
   instead of switching to the one for tablets or phones. While you drag a divider or resize the
   window, the zoom waits until you let go. It can be turned off in the **Tampilan** menu.
+- Zoom controls at the right of every pane's toolbar: **+** and **−** zoom that pane in or out,
+  also while you are in another pane, and the zoom between them shows in the accent color once
+  you changed it; click it to go back to the automatic zoom. A pane narrower than 320 points
+  leaves them out; ⌘= and ⌘- still work there.
 
 ### Changed
 - A new profile shows the start page instead of opening Google AI Studio.

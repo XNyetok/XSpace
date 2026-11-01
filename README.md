@@ -94,7 +94,7 @@ that. Developer ID signatures also get the secure timestamp that notarization re
 | Rename, recolor or delete a profile | **⋯** button or the **Profil** menu; deleting the last one brings back the welcome screen |
 | Address bar of the focused pane | ⌘L |
 | Reload / back / forward | ⌘R / ⌘[ / ⌘] |
-| Zoom a pane | automatic (see [Zoom](#zoom)); ⌘= / ⌘- zoom the pane you are in further in or out, ⌘0 goes back to the automatic zoom |
+| Zoom a pane | automatic (see [Zoom](#zoom)); **+** / **−** at the right of a pane's toolbar, or ⌘= / ⌘- in the pane you are in, zoom that pane further in or out; click its zoom, or press ⌘0, to go back to the automatic zoom |
 | Resize panes | drag the divider; double-click it to equalize; ⌃⌘0 (**Tampilan → Atur Ulang Ukuran Pane**, also at the bottom of the **Tata Letak** menu) gives the panes of the layout their default sizes again |
 | Memory usage and saving | the **RAM …** indicator, or **Tampilan → Hemat RAM** |
 
@@ -109,10 +109,12 @@ window instead of switching to its layout for tablets or phones. On a 13-inch Ma
 single profile stays at 100% and the panes of the other layouts are at 70%. While you drag a
 divider or resize the window, the zoom waits until you let go of the mouse button.
 
-⌘= and ⌘- make the page of the pane you are in bigger or smaller than that, in steps of 10%; the
-profile keeps this, also when it is frozen and after quitting. ⌘0 (**Tampilan → Atur Ulang
-Zoom**) goes back to the automatic zoom. To show every page at 100%, turn off **Tampilan → Zoom
-Otomatis**.
+Every pane shows its zoom at the right of its toolbar. **+** and **−** next to it (or ⌘= and ⌘-
+in the pane you are in) make that page bigger or smaller than the automatic zoom, in steps of
+10%: the zoom then shows in the accent color, and the profile keeps it, also when it is frozen
+and after quitting. Click the zoom, or press ⌘0 (**Tampilan → Atur Ulang Zoom**), to go back to
+the automatic zoom. A pane narrower than 320 points leaves these controls out of its toolbar. To
+show every page at 100%, turn off **Tampilan → Zoom Otomatis**.
 
 A smaller zoom does not save CPU: a page uses about as much in a small pane as in a big one.
 What saves CPU and memory is a profile that is not on screen (see below).

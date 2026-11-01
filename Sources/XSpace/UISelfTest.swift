@@ -484,6 +484,34 @@ final class UISelfTest: NSObject, NSApplicationDelegate {
         controller.resetZoomPane(nil)   // ⌘0, with the keyboard focus in Uji 2
         check(toggle.state == .on && panes().allSatisfy { $0.testZoom == automatic($0) } && saved("Uji 2") == nil,
               "⌘0 goes back to the automatic zoom")
+
+        // The controls in a pane's toolbar zoom that pane, also while you are in another one.
+        let other = panes()[2]
+        other.testClickZoom(1)
+        check(other.testZoom == automatic(other) + 10 && other.testZoomControls.title == "\(other.testZoom)%"
+              && saved("Uji 3") == 10 && thawed.testZoom == automatic(thawed) && controller.focusedPane === thawed,
+              "+ in a pane's toolbar zooms in that pane only, while the keyboard focus stays where it is")
+        other.testClickZoom(-1)
+        other.testClickZoom(-1)
+        check(other.testZoom == automatic(other) - 10 && saved("Uji 3") == -10, "− zooms it out")
+        other.testClickZoom(0)
+        check(other.testZoom == automatic(other) && saved("Uji 3") == nil, "A click on its zoom goes back to the automatic zoom")
+        check(panes().allSatisfy { $0.testZoomControls.shown && $0.testZoomControls.title == "\($0.testZoom)%" && $0.testToolbarFits },
+              "Every pane shows its zoom between − and + (\(panes().map(\.testZoomControls.title).joined(separator: ", ")))")
+
+        if let split = grid.splitView(at: []) {
+            split.dragDivider(at: 0, to: grid.bounds.width)   // the panes on the right as narrow as they get
+            split.dividerDragEnded()
+            grid.layoutSubtreeIfNeeded()
+            let narrow = panes()[1]
+            check(!narrow.testZoomControls.shown && narrow.testToolbarFits && panes()[0].testZoomControls.shown,
+                  "A pane too narrow for them leaves the zoom controls out, and its toolbar still fits "
+                  + "(\(Int(narrow.frame.width)) pt)")
+            controller.resetPaneSizes(nil)
+            grid.layoutSubtreeIfNeeded()
+            check(panes().allSatisfy { $0.testZoomControls.shown && $0.testToolbarFits },
+                  "They come back when the pane is wide enough")
+        }
     }
 
     /// [5]: the keyboard focus never stays in a page that is not on screen. Layout 1 + 3 with

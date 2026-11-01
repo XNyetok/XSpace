@@ -8,6 +8,9 @@ import WebKit
 final class PaneView: NSView, WKNavigationDelegate, WKUIDelegate {
     /// Height of the mini toolbar above the page.
     static let toolbarHeight: CGFloat = 32
+    /// A narrower pane leaves the zoom controls out of its toolbar, so that the profile's name and
+    /// the address field keep some room; ⌘= and ⌘- still work there.
+    static let minimumWidthForZoomControls: CGFloat = 320
     /// The hint in an empty address field (and in the start page's search box), as in browsers:
     /// what is not an address is searched for with Google (see resolve).
     static let addressPlaceholder = "Telusuri Google atau ketik URL"
@@ -53,6 +56,12 @@ final class PaneView: NSView, WKNavigationDelegate, WKUIDelegate {
     private let reloadButton = NSButton()
     private let homeButton = NSButton()
     private let urlField = NSTextField()
+    /// − and + zoom the pane out and in. Between them its zoom, which a click takes back to the
+    /// automatic one.
+    private let zoomControls = NSStackView()
+    private let zoomOutButton = NSButton()
+    private let zoomButton = NSButton()
+    private let zoomInButton = NSButton()
     private let progressBar = NSView()
     private var progressWidth: NSLayoutConstraint?
     private var observations: [NSKeyValueObservation] = []
@@ -166,6 +175,16 @@ final class PaneView: NSView, WKNavigationDelegate, WKUIDelegate {
         configure(forwardButton, symbol: "chevron.right", tip: "Maju (⌘])", action: #selector(forwardPane(_:)))
         configure(reloadButton, symbol: "arrow.clockwise", tip: "Muat ulang (⌘R)", action: #selector(reloadOrStop(_:)))
         configure(homeButton, symbol: "house", tip: "Halaman awal (⇧⌘H)", action: #selector(homePane(_:)))
+        configure(zoomOutButton, symbol: "minus.magnifyingglass", tip: "Perkecil (⌘-)", action: #selector(zoomOutPane(_:)))
+        configure(zoomInButton, symbol: "plus.magnifyingglass", tip: "Perbesar (⌘=)", action: #selector(zoomInPane(_:)))
+        zoomButton.isBordered = false
+        zoomButton.target = self
+        zoomButton.action = #selector(resetZoomPane(_:))
+        zoomButton.translatesAutoresizingMaskIntoConstraints = false
+        zoomButton.widthAnchor.constraint(equalToConstant: 36).isActive = true
+        zoomControls.setViews([zoomOutButton, zoomButton, zoomInButton], in: .leading)
+        zoomControls.spacing = 0
+        zoomControls.isHidden = true   // until the pane is wide enough (see setFrameSize)
 
         urlField.translatesAutoresizingMaskIntoConstraints = false
         urlField.font = .systemFont(ofSize: 12)
@@ -181,12 +200,14 @@ final class PaneView: NSView, WKNavigationDelegate, WKUIDelegate {
         urlField.action = #selector(urlFieldSubmitted(_:))
         urlField.setContentHuggingPriority(.defaultLow, for: .horizontal)
 
-        let bar = NSStackView(views: [profileButton, backButton, forwardButton, reloadButton, homeButton, urlField])
+        let bar = NSStackView(views: [profileButton, backButton, forwardButton, reloadButton, homeButton, urlField,
+                                      zoomControls])
         bar.orientation = .horizontal
         bar.spacing = 6
         // 8 pt on both sides keeps the controls clear of the swap button between two panes.
         bar.edgeInsets = NSEdgeInsets(top: 0, left: 8, bottom: 0, right: 8)
         bar.setCustomSpacing(10, after: profileButton)
+        bar.detachesHiddenViews = true   // the zoom controls in a narrow pane
         bar.translatesAutoresizingMaskIntoConstraints = false
 
         toolbar.addSubview(bar)
@@ -219,6 +240,7 @@ final class PaneView: NSView, WKNavigationDelegate, WKUIDelegate {
             webView.trailingAnchor.constraint(equalTo: trailingAnchor),
             webView.bottomAnchor.constraint(equalTo: bottomAnchor),
         ])
+        syncZoomControls()
     }
 
     // MARK: Start page
@@ -341,13 +363,40 @@ final class PaneView: NSView, WKNavigationDelegate, WKUIDelegate {
         automaticZoom ? PageZoom.automatic(for: pageArea) : 100
     }
 
-    /// Gives the page the zoom it should have now. With the automatic zoom, a pane that has no size
-    /// yet waits for one.
+    /// Gives the page the zoom it should have now, and shows it between − and +. With the automatic
+    /// zoom, a pane that has no size yet waits for one.
     func updateZoom() {
         let area = pageArea
-        guard !automaticZoom || (area.width > 0 && area.height > 0) else { return }
-        let zoom = CGFloat(PageZoom.zoom(base: baseZoom, offset: zoomOffset)) / 100
-        if webView.pageZoom != zoom { webView.pageZoom = zoom }
+        if !automaticZoom || (area.width > 0 && area.height > 0) {
+            let zoom = CGFloat(PageZoom.zoom(base: baseZoom, offset: zoomOffset)) / 100
+            if webView.pageZoom != zoom { webView.pageZoom = zoom }
+        }
+        syncZoomControls()
+    }
+
+    /// The zoom between − and +: in the accent color while the profile has its own zoom, which a
+    /// click on it takes away.
+    private func syncZoomControls() {
+        let zoom = Int((webView.pageZoom * 100).rounded())
+        let own = zoomOffset != 0
+        let centered = NSMutableParagraphStyle()
+        centered.alignment = .center
+        zoomButton.attributedTitle = NSAttributedString(string: "\(zoom)%", attributes: [
+            .font: NSFont.monospacedDigitSystemFont(ofSize: 11, weight: own ? .semibold : .regular),
+            .foregroundColor: own ? NSColor.controlAccentColor : NSColor.secondaryLabelColor,
+            .paragraphStyle: centered,
+        ])
+        if own {
+            zoomButton.toolTip = automaticZoom
+                ? "Zoom \(zoom)%, diatur sendiri untuk pane ini (otomatis: \(baseZoom)%). Klik untuk kembali ke zoom otomatis (⌘0)."
+                : "Zoom \(zoom)%, diatur sendiri untuk pane ini. Klik untuk kembali ke 100% (⌘0)."
+        } else {
+            zoomButton.toolTip = (automaticZoom ? "Zoom \(zoom)%, otomatis mengikuti ukuran pane." : "Zoom \(zoom)%.")
+                + " − dan + mengubahnya untuk pane ini."
+        }
+        zoomButton.setAccessibilityLabel("Zoom \(zoom)%")
+        zoomOutButton.isEnabled = zoom > PageZoom.range.lowerBound
+        zoomInButton.isEnabled = zoom < PageZoom.range.upperBound
     }
 
     private func changeZoomOffset(to offset: Int) {
@@ -362,6 +411,7 @@ final class PaneView: NSView, WKNavigationDelegate, WKUIDelegate {
     /// with a busy test page).
     override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
+        zoomControls.isHidden = newSize.width < Self.minimumWidthForZoomControls
         guard automaticZoom else { return }
         if inLiveResize || NSEvent.pressedMouseButtons != 0 {
             updateZoomWhenMouseIsReleased()
@@ -394,6 +444,24 @@ final class PaneView: NSView, WKNavigationDelegate, WKUIDelegate {
     /// The page's zoom, in percent.
     var testZoom: Int {
         Int((webView.pageZoom * 100).rounded())
+    }
+
+    /// The zoom shown between − and + in the pane's toolbar, and whether they are on screen.
+    var testZoomControls: (title: String, shown: Bool) {
+        (zoomButton.title, zoomButton.window != nil && !zoomButton.isHiddenOrHasHiddenAncestor)
+    }
+
+    /// Whether the controls in the pane's toolbar fit in it, with room for the profile's name.
+    var testToolbarFits: Bool {
+        layoutSubtreeIfNeeded()
+        let shown = [profileButton, urlField, zoomInButton].filter { $0.window != nil && !$0.isHiddenOrHasHiddenAncestor }
+        return profileButton.frame.width >= 20
+            && shown.allSatisfy { toolbar.bounds.contains($0.convert($0.bounds, to: toolbar)) }
+    }
+
+    /// Clicks − (-1), the zoom between them (0) or + (1) in the pane's toolbar.
+    func testClickZoom(_ control: Int) {
+        [zoomOutButton, zoomButton, zoomInButton][control + 1].performClick(nil)
     }
 
     /// The names on the start page's shortcut tiles that are shown, the tile to add one included.
