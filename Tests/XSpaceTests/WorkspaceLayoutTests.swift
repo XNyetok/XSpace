@@ -140,6 +140,66 @@ final class WorkspaceLayoutTests: XCTestCase {
         XCTAssertEqual(updated.panes.map(\.id), layout.panes.map(\.id))
     }
 
+    func testFindingNodes() {
+        let layout = mixedLayout()
+        guard case .split(let root) = layout, case .split(let column) = root.children[1] else {
+            return XCTFail("expected the mixed layout")
+        }
+        let (left, top) = (layout.panes[0], layout.panes[1])
+        XCTAssertEqual(layout.id, root.id)
+        XCTAssertEqual(layout.pane(top.id), top)
+        XCTAssertNil(layout.pane(root.id), "a split is not a pane")
+        XCTAssertEqual(layout.split(column.id), column)
+        XCTAssertEqual(layout.parent(of: top.id)?.split.id, column.id)
+        XCTAssertEqual(layout.parent(of: top.id)?.index, 0)
+        XCTAssertEqual(layout.parent(of: left.id)?.split.id, root.id)
+        XCTAssertEqual(layout.parent(of: column.id)?.index, 1)
+        XCTAssertNil(layout.parent(of: root.id), "the outermost node has no parent")
+        XCTAssertNil(pane(profileA).parent(of: left.id))
+    }
+
+    func testANewPaneAlongTheSameAxisTakesHalfOfThePane() {
+        let (a, b) = (pane(profileA, "https://a.example/"), pane(profileB, "https://b.example/"))
+        let new = LayoutPane(id: UUID(), profileID: profileB, url: "https://new.example/")
+        guard case .split(let result) = split(.horizontal, [a, b], ratios: [0.6, 0.4])
+            .inserting(new, nextTo: a.id, along: .horizontal) else { return XCTFail("expected a split") }
+        XCTAssertEqual(result.children.map(\.id), [a.id, new.id, b.id])
+        XCTAssertEqual(result.ratios, [0.3, 0.3, 0.4], "the other pane keeps its width")
+    }
+
+    func testANewPaneNextToEqualPanesLeavesTheOthersAlone() {
+        let (a, b) = (pane(profileA), pane(profileA))
+        let new = LayoutPane(id: UUID(), profileID: profileA, url: "https://new.example/")
+        guard case .split(let result) = split(.horizontal, [a, b]).inserting(new, nextTo: b.id, along: .horizontal) else {
+            return XCTFail("expected a split")
+        }
+        XCTAssertEqual(result.children.map(\.id), [a.id, b.id, new.id])
+        XCTAssertEqual(result.ratios, [1, 0.5, 0.5])
+    }
+
+    func testANewPaneAcrossTheSplitSharesThePanesPlace() {
+        let (a, b) = (pane(profileA), pane(profileB))
+        let new = LayoutPane(id: UUID(), profileID: profileA, url: "https://new.example/")
+        guard case .split(let root) = split(.horizontal, [a, b], ratios: [0.6, 0.4])
+            .inserting(new, nextTo: b.id, along: .vertical),
+            case .split(let column) = root.children[1] else { return XCTFail("expected b and the new pane stacked") }
+        XCTAssertEqual(root.ratios, [0.6, 0.4], "the stack takes b's width")
+        XCTAssertEqual(column.axis, .vertical)
+        XCTAssertEqual(column.children.map(\.id), [b.id, new.id])
+        XCTAssertNil(column.ratios)
+    }
+
+    func testANewPaneNextToTheOnlyPane() {
+        let only = pane(profileA)
+        let new = LayoutPane(id: UUID(), profileID: profileB, url: "https://new.example/")
+        guard case .split(let root) = only.inserting(new, nextTo: only.id, along: .vertical) else {
+            return XCTFail("expected a split")
+        }
+        XCTAssertEqual(root.axis, .vertical)
+        XCTAssertEqual(root.children, [only, .pane(new)])
+        XCTAssertEqual(only.inserting(new, nextTo: UUID(), along: .vertical), only, "no such pane: unchanged")
+    }
+
     func testRemovingPanesCollapsesSplitsAndKeepsShares() throws {
         let layout = mixedLayout()
         let withoutB = try XCTUnwrap(layout.removingPanes { $0.profileID == profileB })

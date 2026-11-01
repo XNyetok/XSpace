@@ -71,6 +71,14 @@ extension LayoutNode: Codable {
 // MARK: - Reading and changing a layout
 
 extension LayoutNode {
+    /// The ID of the pane or split.
+    var id: UUID {
+        switch self {
+        case .pane(let pane): return pane.id
+        case .split(let split): return split.id
+        }
+    }
+
     /// The panes in reading order: left to right, top to bottom.
     var panes: [LayoutPane] {
         switch self {
@@ -81,6 +89,54 @@ extension LayoutNode {
 
     func contains(profile id: UUID) -> Bool {
         panes.contains { $0.profileID == id }
+    }
+
+    func pane(_ id: UUID) -> LayoutPane? {
+        panes.first { $0.id == id }
+    }
+
+    /// The split `id` in this layout.
+    func split(_ id: UUID) -> LayoutSplit? {
+        guard case .split(let split) = self else { return nil }
+        if split.id == id { return split }
+        for child in split.children {
+            if let found = child.split(id) { return found }
+        }
+        return nil
+    }
+
+    /// The split that holds the node `id`, and the node's index in it; nil for the outermost node.
+    func parent(of id: UUID) -> (split: LayoutSplit, index: Int)? {
+        guard case .split(let split) = self else { return nil }
+        if let index = split.children.firstIndex(where: { $0.id == id }) { return (split, index) }
+        for child in split.children {
+            if let found = child.parent(of: id) { return found }
+        }
+        return nil
+    }
+
+    /// The same layout with `newPane` next to the pane `id`: right after it in the split that
+    /// holds it if that split goes along `axis`, otherwise together with it in a new split along
+    /// `axis` that takes its place. Either way the two share the space the pane had.
+    func inserting(_ newPane: LayoutPane, nextTo id: UUID, along axis: SplitAxis) -> LayoutNode {
+        switch self {
+        case .pane(let pane):
+            guard pane.id == id else { return self }
+            return .split(LayoutSplit(id: UUID(), axis: axis, children: [self, .pane(newPane)], ratios: nil))
+        case .split(var split):
+            if split.axis == axis, let index = split.children.firstIndex(where: { $0.id == id }),
+               case .pane = split.children[index] {
+                let count = split.children.count
+                var shares = split.ratios.flatMap { $0.count == count ? $0 : nil } ?? Array(repeating: 1, count: count)
+                shares[index] /= 2
+                shares.insert(shares[index], at: index + 1)
+                split.children.insert(.pane(newPane), at: index + 1)
+                split.ratios = shares
+                return .split(split)
+            }
+            split.children = split.children.map { $0.inserting(newPane, nextTo: id, along: axis) }
+            return .split(split)
+        }
     }
 
     /// The same layout with every pane passed through `transform`.
