@@ -9,9 +9,15 @@ All notable changes to this project are documented here. The format follows
 ### Added
 - A welcome screen on the first start: choose a layout, and XSpace makes a profile for each of its
   panes. Nothing loads before you open a page.
-- A start page for a pane without a page, like a browser's new tab page: the profile's name and a
-  search box. Search Google or type an address there (or in the address bar) and press Return; the
-  profile keeps that page.
+- A start page for a pane without a page, like a browser's new tab page: the profile's name, a
+  search box and the profile's shortcuts. Search Google or type an address there (or in the address
+  bar) and press Return; the profile keeps that page.
+- Shortcuts on the start page, up to ten per profile: **Tambah pintasan** adds one, to that profile
+  or to every profile at once; right-click a shortcut (or use its ⋯ button) to change or remove it.
+  They show the first letter of their name: XSpace loads no site icons, so a shortcut makes no
+  network request.
+- **Beranda**, the house button in a pane's toolbar (⇧⌘H), shows the start page again; **Kembali**
+  (⌘[) returns to the page.
 
 ### Changed
 - A new profile shows the start page instead of opening Google AI Studio.

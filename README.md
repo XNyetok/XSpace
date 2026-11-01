@@ -29,7 +29,7 @@ mixing and without a pile of browser windows spread across Spaces.
   by side, 2 stacked, 3 side by side, 2 × 2, 1 + 2 or 1 + 3. Panes can be resized and swapped,
   and every layout remembers its profiles and sizes
 - A welcome screen to choose the layout on the first start, and a start page like a browser's new
-  tab page in every new pane: nothing loads before you open a page
+  tab page, with shortcuts to your sites: nothing loads before you open a page
 - Color-coded profiles and pane borders, so you always know which account you are in
 - Popups and sign-in windows stay inside their profile
 - Memory saving: lazy loading, automatic freezing of hidden profiles, RAM indicator
@@ -81,6 +81,8 @@ that. Developer ID signatures also get the secure timestamp that notarization re
 |---|---|
 | Get started | on the first start, choose a layout on the welcome screen: XSpace makes a profile for each of its panes |
 | Open a page in a new profile | type an address or search terms in the search box of its start page (or in its address bar), then press Return |
+| Start page | the house button in a pane's toolbar, or ⇧⌘H; ⌘[ returns to the page |
+| Shortcuts on the start page | **Tambah pintasan** adds one, to that profile or to every profile at once; right-click a shortcut, or its ⋯ button, to change or remove it |
 | Choose a layout | the **Tata Letak** button in the toolbar, or **Tampilan → Tata Letak** |
 | Show a profile | click it in the toolbar (the ones on screen are highlighted), or ⌘1–⌘9: a hidden profile takes the place of the pane you are in |
 | Choose the profile of a pane | click the profile name at the left of the pane's toolbar (a profile shown elsewhere trades places) |
@@ -148,7 +150,7 @@ $APP --selftest-persist    # persistence (read back) + cleanup
 $APP --selftest-ui         # real window with throwaway state: upgrading from 0.5.0, freezing,
                            # layouts, showing and swapping profiles, keyboard focus, RAM
                            # indicator, deleting a profile, first start (welcome screen, start
-                           # pages)
+                           # pages, shortcuts)
 ```
 
 All self-tests use their own throwaway profiles and never touch your real ones. Set
@@ -162,7 +164,7 @@ All self-tests use their own throwaway profiles and never touch your real ones. 
 | `Sources/XSpace/Grid.swift` | layouts: the presets as trees of slots, the automatic grid |
 | `Sources/XSpace/WebKitSupport.swift` | web view configuration, Safari User-Agent, deleting data stores, downloads, error page |
 | `Sources/XSpace/PaneView.swift` | one pane: mini toolbar + `WKWebView` + navigation/UI delegates |
-| `Sources/XSpace/StartPageView.swift` | a pane's start page, like a browser's new tab page, while it has no page |
+| `Sources/XSpace/StartPageView.swift` | a pane's start page, like a browser's new tab page: search box and shortcuts |
 | `Sources/XSpace/WelcomeView.swift` | the welcome screen on the first start: choosing a layout |
 | `Sources/XSpace/GridView.swift` | the panes in the slots of the layout, hidden panes, empty slots, layout icons and pictures |
 | `Sources/XSpace/PaneSplitView.swift` | pane splitter: side by side or stacked, nested, swap button |

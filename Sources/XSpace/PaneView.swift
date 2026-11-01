@@ -1,9 +1,9 @@
 import AppKit
 import WebKit
 
-/// One browser pane: a mini toolbar (profile, back/forward/reload, address) + a WKWebView, or the
-/// start page while the pane has no page yet. The border uses the profile color so it is always
-/// clear which account a pane belongs to.
+/// One browser pane: a mini toolbar (profile, back/forward/reload/home, address) + a WKWebView,
+/// with the start page over it while the pane has no page yet or after Beranda. The border uses the
+/// profile color so it is always clear which account a pane belongs to.
 @MainActor
 final class PaneView: NSView, WKNavigationDelegate, WKUIDelegate {
     /// Height of the mini toolbar above the page.
@@ -23,6 +23,15 @@ final class PaneView: NSView, WKNavigationDelegate, WKUIDelegate {
     var menuProvider: (() -> NSMenu?)? {
         didSet { refreshProfileAppearance() }
     }
+    /// The profile's shortcuts, for the start page. Set for the panes of the main window.
+    var shortcutsProvider: (() -> [Shortcut])? {
+        didSet { refreshShortcuts() }
+    }
+    /// Adding, changing or removing one of the profile's shortcuts; without it the start page offers
+    /// no way to.
+    var onEditShortcuts: ((ShortcutEdit) -> Void)? {
+        didSet { refreshShortcuts() }
+    }
 
     private let toolbar = NSView()
     /// The profile's dot and name; opens the menu of menuProvider.
@@ -30,6 +39,7 @@ final class PaneView: NSView, WKNavigationDelegate, WKUIDelegate {
     private let backButton = NSButton()
     private let forwardButton = NSButton()
     private let reloadButton = NSButton()
+    private let homeButton = NSButton()
     private let urlField = NSTextField()
     private let progressBar = NSView()
     private var progressWidth: NSLayoutConstraint?
@@ -38,7 +48,7 @@ final class PaneView: NSView, WKNavigationDelegate, WKUIDelegate {
     /// The web content process died while the pane was hidden. It is reloaded when the pane
     /// becomes visible, not in the background, so the memory is not immediately used again.
     private(set) var needsReloadWhenVisible = false
-    /// Shown instead of the page while the pane has no page yet; nil once one opens.
+    /// Shown over the page while the pane has no page yet, or after Beranda; nil otherwise.
     private var startPage: StartPageView?
 
     /// - Parameters:
@@ -68,7 +78,8 @@ final class PaneView: NSView, WKNavigationDelegate, WKUIDelegate {
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
-    /// Whether the pane shows its start page: it has no page yet, and nothing is loaded.
+    /// Whether the pane shows its start page: over its page after Beranda, or because it has no page
+    /// yet (and nothing is loaded).
     var isShowingStartPage: Bool { startPage != nil }
 
     /// What gets the keyboard focus when the pane does: the start page's address field, or the page.
@@ -100,9 +111,13 @@ final class PaneView: NSView, WKNavigationDelegate, WKUIDelegate {
         webView.uiDelegate = nil
         webView.removeFromSuperview()
         startPage?.onSubmit = nil
+        startPage?.onOpen = nil
+        startPage?.onEdit = nil
         onURLChange = nil
         onTitleChange = nil
         onRequestClose = nil
+        shortcutsProvider = nil
+        onEditShortcuts = nil
     }
 
     // MARK: Views
@@ -132,6 +147,7 @@ final class PaneView: NSView, WKNavigationDelegate, WKUIDelegate {
         configure(backButton, symbol: "chevron.left", tip: "Kembali (⌘[)", action: #selector(backPane(_:)))
         configure(forwardButton, symbol: "chevron.right", tip: "Maju (⌘])", action: #selector(forwardPane(_:)))
         configure(reloadButton, symbol: "arrow.clockwise", tip: "Muat ulang (⌘R)", action: #selector(reloadOrStop(_:)))
+        configure(homeButton, symbol: "house", tip: "Halaman awal (⇧⌘H)", action: #selector(homePane(_:)))
 
         urlField.translatesAutoresizingMaskIntoConstraints = false
         urlField.font = .systemFont(ofSize: 12)
@@ -147,7 +163,7 @@ final class PaneView: NSView, WKNavigationDelegate, WKUIDelegate {
         urlField.action = #selector(urlFieldSubmitted(_:))
         urlField.setContentHuggingPriority(.defaultLow, for: .horizontal)
 
-        let bar = NSStackView(views: [profileButton, backButton, forwardButton, reloadButton, urlField])
+        let bar = NSStackView(views: [profileButton, backButton, forwardButton, reloadButton, homeButton, urlField])
         bar.orientation = .horizontal
         bar.spacing = 6
         // 8 pt on both sides keeps the controls clear of the swap button between two panes.
@@ -187,12 +203,17 @@ final class PaneView: NSView, WKNavigationDelegate, WKUIDelegate {
         ])
     }
 
-    /// The start page covers the page area. The toolbar stays as it is, as in a browser, with
-    /// nothing to go back to or reload yet.
+    // MARK: Start page
+
+    /// The start page covers the page area, and the page behind it (if any) waits, hidden. The
+    /// toolbar stays as it is, as in a browser: Kembali returns to that page, and the address field
+    /// is empty.
     private func showStartPage() {
         let page = StartPageView()
         page.translatesAutoresizingMaskIntoConstraints = false
         page.onSubmit = { [weak self] text in self?.openFromStartPage(text) }
+        page.onOpen = { [weak self] url in self?.open(url) }
+        page.onEdit = { [weak self] edit in self?.onEditShortcuts?(edit) }
         addSubview(page)
         NSLayoutConstraint.activate([
             page.topAnchor.constraint(equalTo: toolbar.bottomAnchor),
@@ -201,12 +222,15 @@ final class PaneView: NSView, WKNavigationDelegate, WKUIDelegate {
             page.bottomAnchor.constraint(equalTo: bottomAnchor),
         ])
         startPage = page
+        page.show(profile)
+        refreshShortcuts()
         webView.isHidden = true
         syncButtons()
+        syncLocation()
     }
 
-    /// The pane gets its page: the start page goes for good.
-    private func leaveStartPage() {
+    /// The start page goes: a page opens, or Kembali returns to the one behind it.
+    private func closeStartPage() {
         guard let page = startPage else { return }
         startPage = nil
         // Hidden now, removed after this event: this can run in the action of the page's own
@@ -215,17 +239,34 @@ final class PaneView: NSView, WKNavigationDelegate, WKUIDelegate {
         Task { @MainActor in page.removeFromSuperview() }
         webView.isHidden = false
         syncButtons()
+        syncLocation()
     }
 
-    /// Opens what was typed on the start page, or in the address field while it is shown. The
-    /// profile keeps that address as its page right away, so it comes back even if the site first
-    /// sends you to a sign-in page.
+    /// Opens what was typed on the start page, or in the address field while it is shown.
     private func openFromStartPage(_ text: String) {
         guard let url = PaneView.resolve(text) else { return }
-        leaveStartPage()
+        open(url)
+    }
+
+    /// Opens a page from the start page. The profile keeps it as its page right away, so it comes
+    /// back even if the site first sends you to a sign-in page.
+    private func open(_ url: URL) {
+        closeStartPage()
         webView.load(URLRequest(url: url))
         if Self.isWorthRestoring(url) { onURLChange?(url.absoluteString) }
         window?.makeFirstResponder(webView)
+    }
+
+    /// Shows the profile's shortcuts on the start page; a new one starts with the page behind it.
+    func refreshShortcuts() {
+        guard let startPage else { return }
+        if let url = webView.url, Self.isWorthRestoring(url) {
+            let title = webView.title.flatMap { $0.isEmpty ? nil : $0 } ?? Shortcut.defaultTitle(for: url)
+            startPage.suggestion = Shortcut(title: title, url: url.absoluteString)
+        } else {
+            startPage.suggestion = nil
+        }
+        startPage.show(shortcuts: shortcutsProvider?() ?? [], editable: onEditShortcuts != nil)
     }
 
     private func configure(_ button: NSButton, symbol: String, tip: String, action: Selector) {
@@ -270,6 +311,24 @@ final class PaneView: NSView, WKNavigationDelegate, WKUIDelegate {
         startPage?.show(profile)
     }
 
+    // MARK: Hooks for the automated UI test (--selftest-ui)
+
+    /// The names on the start page's shortcut tiles that are shown, the tile to add one included.
+    var testShortcutTitles: [String]? {
+        startPage?.layoutSubtreeIfNeeded()
+        return startPage?.testTileTitles
+    }
+
+    /// Clicks the shortcut tile with this name.
+    func testClickShortcut(_ title: String) {
+        startPage?.testTile(title)?.performClick(nil)
+    }
+
+    /// Removes a shortcut like its tile's menu does.
+    func testRemoveShortcut(_ title: String) {
+        startPage?.testTile(title)?.removeShortcut(nil)
+    }
+
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
         refreshProfileAppearance()
@@ -306,17 +365,22 @@ final class PaneView: NSView, WKNavigationDelegate, WKUIDelegate {
 
     private func syncLocation() {
         guard urlField.currentEditor() == nil else { return }
-        if webView.url?.scheme == "about", let failedURL {
+        if isShowingStartPage {
+            urlField.stringValue = ""   // as on a new tab: the page behind is not the one shown
+        } else if webView.url?.scheme == "about", let failedURL {
             urlField.stringValue = failedURL.absoluteString
         } else {
             urlField.stringValue = webView.url?.absoluteString ?? ""
         }
     }
 
+    /// On the start page Kembali returns to the page behind it, if there is one, and there is
+    /// nothing to go forward to, reload, or go home to.
     private func syncButtons() {
-        backButton.isEnabled = webView.canGoBack
-        forwardButton.isEnabled = webView.canGoForward
+        backButton.isEnabled = isShowingStartPage ? webView.url != nil : webView.canGoBack
+        forwardButton.isEnabled = !isShowingStartPage && webView.canGoForward
         reloadButton.isEnabled = !isShowingStartPage
+        homeButton.isEnabled = !isShowingStartPage
         let loading = webView.isLoading
         reloadButton.image = NSImage(systemSymbolName: loading ? "xmark" : "arrow.clockwise",
                                      accessibilityDescription: loading ? "Berhenti" : "Muat ulang")
@@ -331,6 +395,7 @@ final class PaneView: NSView, WKNavigationDelegate, WKUIDelegate {
     // MARK: Actions (also reached from menus through the responder chain)
 
     @objc func reloadPane(_ sender: Any?) {
+        guard !isShowingStartPage else { return }
         if webView.url?.scheme == "about", let failedURL {
             webView.load(URLRequest(url: failedURL))
         } else if webView.url == nil {
@@ -352,8 +417,27 @@ final class PaneView: NSView, WKNavigationDelegate, WKUIDelegate {
         if webView.isLoading { webView.stopLoading() } else { reloadPane(sender) }
     }
 
-    @objc func backPane(_ sender: Any?) { webView.goBack() }
-    @objc func forwardPane(_ sender: Any?) { webView.goForward() }
+    /// From the start page: back to the page behind it.
+    @objc func backPane(_ sender: Any?) {
+        guard isShowingStartPage else {
+            webView.goBack()
+            return
+        }
+        guard webView.url != nil else { return }
+        closeStartPage()
+        reloadIfNeeded()
+        window?.makeFirstResponder(webView)
+    }
+
+    @objc func forwardPane(_ sender: Any?) {
+        if !isShowingStartPage { webView.goForward() }
+    }
+
+    /// Beranda: the start page, over the page, which stays as it is behind it.
+    @objc func homePane(_ sender: Any?) {
+        if !isShowingStartPage { showStartPage() }
+        window?.makeFirstResponder(focusTarget)
+    }
 
     @objc func openLocation(_ sender: Any?) {
         window?.makeFirstResponder(urlField)
@@ -372,25 +456,32 @@ final class PaneView: NSView, WKNavigationDelegate, WKUIDelegate {
         window?.makeFirstResponder(webView)
     }
 
-    /// Turns address-bar input into a URL: full URLs as is, "example.com" as https,
-    /// "localhost:3000" and IP addresses as http (local servers rarely have TLS; Safari does the
-    /// same), anything else as a Google search.
-    static func resolve(_ text: String) -> URL? {
+    /// Turns address-bar input into a URL: an address (see `address`), anything else as a Google
+    /// search.
+    nonisolated static func resolve(_ text: String) -> URL? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        if let url = address(trimmed) { return url }
+        var components = URLComponents(string: "https://www.google.com/search")
+        components?.queryItems = [URLQueryItem(name: "q", value: trimmed)]
+        return components?.url
+    }
+
+    /// Typed text as an address, nil for anything else (search terms): full http, https and about
+    /// URLs as they are, "example.com" as https, "localhost:3000" and IP addresses as http (local
+    /// servers rarely have TLS; Safari does the same).
+    nonisolated static func address(_ text: String) -> URL? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
         if let url = URL(string: trimmed), let scheme = url.scheme?.lowercased(),
            ["http", "https", "about"].contains(scheme) {
             return url
         }
-        if !trimmed.contains(" "), trimmed.contains(".") || trimmed.hasPrefix("localhost") {
-            let host = trimmed.prefix { !":/?#".contains($0) }
-            let octets = host.split(separator: ".", omittingEmptySubsequences: false)
-            let isLocal = host == "localhost" || (octets.count == 4 && octets.allSatisfy { UInt8($0) != nil })
-            return URL(string: (isLocal ? "http://" : "https://") + trimmed)
-        }
-        var components = URLComponents(string: "https://www.google.com/search")
-        components?.queryItems = [URLQueryItem(name: "q", value: trimmed)]
-        return components?.url
+        guard !trimmed.contains(" "), trimmed.contains(".") || trimmed.hasPrefix("localhost") else { return nil }
+        let host = trimmed.prefix { !":/?#".contains($0) }
+        let octets = host.split(separator: ".", omittingEmptySubsequences: false)
+        let isLocal = host == "localhost" || (octets.count == 4 && octets.allSatisfy { UInt8($0) != nil })
+        return URL(string: (isLocal ? "http://" : "https://") + trimmed)
     }
 
     // MARK: WKNavigationDelegate
@@ -438,10 +529,6 @@ final class PaneView: NSView, WKNavigationDelegate, WKUIDelegate {
         download.delegate = DownloadCoordinator.shared
     }
 
-    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
-        leaveStartPage()   // however the page was opened
-    }
-
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
         if webView.url?.scheme != "about" { failedURL = nil }
     }
@@ -461,8 +548,9 @@ final class PaneView: NSView, WKNavigationDelegate, WKUIDelegate {
     }
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
-        // The page process crashed or was killed by the system to reclaim memory.
-        if window == nil || isHiddenOrHasHiddenAncestor {
+        // The page process crashed or was killed by the system to reclaim memory. A page behind
+        // the start page waits too.
+        if window == nil || isHiddenOrHasHiddenAncestor || webView.isHidden {
             needsReloadWhenVisible = true
         } else {
             webView.reload()
@@ -470,7 +558,7 @@ final class PaneView: NSView, WKNavigationDelegate, WKUIDelegate {
     }
 
     func reloadIfNeeded() {
-        guard needsReloadWhenVisible else { return }
+        guard needsReloadWhenVisible, !isShowingStartPage else { return }
         needsReloadWhenVisible = false
         reloadPane(nil)
     }

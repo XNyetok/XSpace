@@ -7,6 +7,32 @@ struct PaneState: Codable, Equatable {
     var url: String
 }
 
+/// A shortcut on a profile's start page: a website that opens with one click.
+struct Shortcut: Codable, Equatable {
+    /// At most this many per profile, as in browsers: two rows of five.
+    static let limit = 10
+
+    var title: String
+    var url: String
+
+    /// The name of a shortcut without one: the site's host, without "www.".
+    static func defaultTitle(for url: URL) -> String {
+        let host = url.host ?? url.absoluteString
+        return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
+    }
+}
+
+extension Shortcut {
+    /// A shortcut as typed in its dialog: the address of a website (not search terms) and a name,
+    /// the site's if none is typed. Nil without such an address.
+    init?(name: String, address: String) {
+        guard let url = PaneView.address(address), let scheme = url.scheme?.lowercased(),
+              scheme == "http" || scheme == "https" else { return nil }
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.init(title: name.isEmpty ? Shortcut.defaultTitle(for: url) : name, url: url.absoluteString)
+    }
+}
+
 struct ProfileState: Codable, Equatable {
     /// Also the identifier of the profile's WKWebsiteDataStore.
     var id: UUID
@@ -15,6 +41,8 @@ struct ProfileState: Codable, Equatable {
     /// The page of the profile's pane; nil until one is opened, and until then the pane shows its
     /// start page (an address field).
     var url: String?
+    /// The shortcuts on the profile's start page, in order.
+    var shortcuts: [Shortcut] = []
     /// The profile's panes as XSpace 0.5.0 knows them; only written for 0.5.0 (see
     /// AppStateData.encodedForDisk).
     var panes: [PaneState] = []
@@ -25,7 +53,7 @@ struct ProfileState: Codable, Equatable {
 extension ProfileState {
     /// Up to 0.5.0 a profile had panes (AI Studio | Sheets) and no page of its own: it keeps the
     /// page of its first pane. An empty address (what 0.5.0 gets for a profile without a page)
-    /// is no page.
+    /// is no page. Shortcuts that cannot be read are left out, not the profile.
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(UUID.self, forKey: .id)
@@ -35,6 +63,7 @@ extension ProfileState {
         splitRatios = try c.decodeIfPresent([Double].self, forKey: .splitRatios)
         let page = try c.decodeIfPresent(String.self, forKey: .url) ?? panes.first?.url
         url = page?.isEmpty == false ? page : nil
+        shortcuts = (try? c.decodeIfPresent([Shortcut].self, forKey: .shortcuts)) ?? []
     }
 }
 
@@ -278,6 +307,33 @@ struct AppStateData: Codable {
             selectedProfileID = shownProfiles.compactMap { $0 }.first ?? profiles.first?.id
         }
         pendingDeletion.append(id)
+    }
+
+    // MARK: Shortcuts
+
+    /// Adds a shortcut to a profile's start page, or with `everywhere` to every profile's. A profile
+    /// that has a shortcut to the same address already, or `Shortcut.limit` of them, stays as it is.
+    mutating func addShortcut(_ shortcut: Shortcut, to id: UUID, everywhere: Bool = false) {
+        for index in profiles.indices where everywhere || profiles[index].id == id {
+            let shortcuts = profiles[index].shortcuts
+            guard shortcuts.count < Shortcut.limit, !shortcuts.contains(where: { $0.url == shortcut.url }) else { continue }
+            profiles[index].shortcuts.append(shortcut)
+        }
+    }
+
+    /// Replaces a shortcut of a profile (the first one equal to `old`) in its place.
+    mutating func replaceShortcut(_ old: Shortcut, of id: UUID, with new: Shortcut) {
+        guard let index = profiles.firstIndex(where: { $0.id == id }),
+              let position = profiles[index].shortcuts.firstIndex(of: old) else { return }
+        profiles[index].shortcuts[position] = new
+    }
+
+    /// Removes a shortcut from a profile (the first one equal to `shortcut`); the other profiles keep
+    /// theirs.
+    mutating func removeShortcut(_ shortcut: Shortcut, from id: UUID) {
+        guard let index = profiles.firstIndex(where: { $0.id == id }),
+              let position = profiles[index].shortcuts.firstIndex(of: shortcut) else { return }
+        profiles[index].shortcuts.remove(at: position)
     }
 
     /// state.json as written to disk: the current format, plus what 0.5.0 reads, so going back to

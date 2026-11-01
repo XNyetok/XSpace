@@ -248,6 +248,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         let id = profile.id
         pane.onURLChange = { [weak self] url in self?.state.updateProfile(id) { $0.url = url } }
         pane.menuProvider = { [weak self] in self?.paneMenu(for: id) }
+        pane.shortcutsProvider = { [weak self] in self?.state.data.profiles.first { $0.id == id }?.shortcuts ?? [] }
+        pane.onEditShortcuts = { [weak self] edit in self?.editShortcuts(of: id, edit) }
         panes[id] = pane
         return pane
     }
@@ -818,11 +820,87 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         }
     }
 
+    // MARK: Shortcuts
+
+    /// The start page of a profile asks to add, change or remove one of its shortcuts. Adding and
+    /// changing ask for the name and address first; a new shortcut can go to every profile at once.
+    private func editShortcuts(of id: UUID, _ edit: ShortcutEdit) {
+        switch edit {
+        case .add(let suggestion):
+            askForShortcut(suggestion, adding: true) { [weak self] shortcut, everywhere in
+                self?.changeShortcuts { $0.addShortcut(shortcut, to: id, everywhere: everywhere) }
+            }
+        case .change(let old):
+            askForShortcut(old, adding: false) { [weak self] shortcut, _ in
+                self?.changeShortcuts { $0.replaceShortcut(old, of: id, with: shortcut) }
+            }
+        case .remove(let shortcut):
+            changeShortcuts { $0.removeShortcut(shortcut, from: id) }
+        }
+    }
+
+    /// Changes shortcuts in the saved state and on the start pages.
+    private func changeShortcuts(_ change: (inout AppStateData) -> Void) {
+        change(&state.data)
+        state.scheduleSave()
+        panes.values.forEach { $0.refreshShortcuts() }
+    }
+
+    /// The dialog of a shortcut: its name and address and, for a new one, whether every other profile
+    /// gets it too. What is not the address of a website is asked for again.
+    private func askForShortcut(_ shortcut: Shortcut?, adding: Bool, retry: Bool = false, everywhere: Bool = false,
+                                completion: @escaping @MainActor (Shortcut, Bool) -> Void) {
+        guard let window else { return }
+        let alert = NSAlert()
+        alert.messageText = adding ? "Tambah pintasan" : "Ubah pintasan"
+        alert.informativeText = retry
+            ? "Itu bukan alamat situs. Ketik alamatnya, misalnya example.com."
+            : "Pintasan tampil di halaman awal profil. Tanpa nama, pintasan memakai nama situsnya."
+        alert.addButton(withTitle: adding ? "Tambah" : "Simpan")
+        alert.addButton(withTitle: "Batal")
+        let name = NSTextField(string: shortcut?.title ?? "")
+        let address = NSTextField(string: shortcut?.url ?? "")
+        address.placeholderString = "example.com"
+        for field in [name, address] {
+            field.widthAnchor.constraint(equalToConstant: 260).isActive = true
+        }
+        let form = NSGridView(views: [
+            [NSTextField(labelWithString: "Nama:"), name],
+            [NSTextField(labelWithString: "Alamat:"), address],
+        ])
+        form.column(at: 0).xPlacement = .trailing
+        form.rowAlignment = .firstBaseline
+        form.rowSpacing = 8
+        form.columnSpacing = 8
+        let toAll = NSButton(checkboxWithTitle: "Tambahkan juga ke semua profil lain", target: nil, action: nil)
+        toAll.state = everywhere ? .on : .off
+        if adding && profiles.count > 1 {
+            form.addRow(with: [NSGridCell.emptyContentView, toAll])
+        }
+        form.frame = NSRect(origin: .zero, size: form.fittingSize)
+        alert.accessoryView = form
+        alert.window.initialFirstResponder = name
+        alert.beginSheetModal(for: window) { [weak self] response in
+            guard response == .alertFirstButtonReturn else { return }
+            let everywhere = toAll.state == .on
+            guard let result = Shortcut(name: name.stringValue, address: address.stringValue) else {
+                // Once this sheet is gone, with what was typed.
+                let typed = Shortcut(title: name.stringValue, url: address.stringValue)
+                Task { @MainActor in
+                    self?.askForShortcut(typed, adding: adding, retry: true, everywhere: everywhere, completion: completion)
+                }
+                return
+            }
+            completion(result, everywhere)
+        }
+    }
+
     // MARK: Pane actions (fallback when keyboard focus is not inside a pane)
 
     @objc func reloadPane(_ sender: Any?) { activePane?.reloadPane(sender) }
     @objc func backPane(_ sender: Any?) { activePane?.backPane(sender) }
     @objc func forwardPane(_ sender: Any?) { activePane?.forwardPane(sender) }
+    @objc func homePane(_ sender: Any?) { activePane?.homePane(sender) }
     @objc func openLocation(_ sender: Any?) { activePane?.openLocation(sender) }
     @objc func zoomInPane(_ sender: Any?) { activePane?.zoomInPane(sender) }
     @objc func zoomOutPane(_ sender: Any?) { activePane?.zoomOutPane(sender) }
@@ -848,8 +926,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         case #selector(swapPanes(_:)):
             return state.data.shownProfiles.count > 1
         case #selector(reloadPane(_:)), #selector(backPane(_:)), #selector(forwardPane(_:)),
-             #selector(openLocation(_:)), #selector(zoomInPane(_:)), #selector(zoomOutPane(_:)),
-             #selector(actualSizePane(_:)):
+             #selector(homePane(_:)), #selector(openLocation(_:)), #selector(zoomInPane(_:)),
+             #selector(zoomOutPane(_:)), #selector(actualSizePane(_:)):
             return activePane != nil
         default:
             break
@@ -889,6 +967,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
 
     /// The welcome screen, while it is shown.
     var testWelcome: WelcomeView? { welcome }
+
+    /// Changes shortcuts as the dialogs do, without them.
+    func testChangeShortcuts(_ change: (inout AppStateData) -> Void) {
+        changeShortcuts(change)
+    }
 
     func testSetPolicy(_ policy: HibernatePolicy) {
         state.data.hibernatePolicy = policy

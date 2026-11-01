@@ -5,10 +5,10 @@ import WebKit
 /// `XSpace --selftest-ui [shot.png]`: runs the real XSpace window with THROWAWAY state
 /// (temporary folder + new test profiles), checks upgrading from 0.5.0, freezing, the layouts,
 /// showing and swapping profiles, the keyboard focus, the RAM indicator, deleting a profile and
-/// the first start (welcome screen, start pages, deleting the last profile), then deletes
-/// everything. Real profiles are never touched. With a .png argument it also saves snapshots:
-/// shot.png of the 1 + 3 layout, shot-welcome.png of the welcome screen and shot-start.png of the
-/// start pages.
+/// the first start (welcome screen, start pages, shortcuts, Beranda, deleting the last profile), then
+/// deletes everything. Real profiles are never touched. With a .png argument it also saves
+/// snapshots: shot.png of the 1 + 3 layout, shot-welcome.png of the welcome screen and
+/// shot-start.png of the start pages.
 @MainActor
 final class UISelfTest: NSObject, NSApplicationDelegate {
     private static let aiStudio = "https://aistudio.google.com/"
@@ -245,8 +245,9 @@ final class UISelfTest: NSObject, NSApplicationDelegate {
         return removals
     }
 
-    /// [8], continued: the panes of 2 × 2 on their start pages, the keyboard focus, and an address
-    /// typed in one of them. False if a pane is missing.
+    /// [8], continued: the panes of 2 × 2 on their start pages, the keyboard focus, shortcuts for every
+    /// profile, an address typed in one pane and a shortcut clicked in another, Beranda and Kembali,
+    /// and removing a shortcut. False if a pane is missing.
     private func checkStartPages(_ controller: MainWindowController, names: [String]) async -> Bool {
         let panes = names.compactMap { controller.testPane($0) }
         guard panes.count == 4 else {
@@ -259,6 +260,20 @@ final class UISelfTest: NSObject, NSApplicationDelegate {
         let firstField = panes[0].focusTarget as? NSTextField
         check(controller.focusedPane === panes[0] && firstField?.currentEditor() != nil,
               "The first pane's address field has the keyboard focus")
+        check(panes.allSatisfy { $0.testShortcutTitles == ["Tambah pintasan"] },
+              "Without shortcuts a start page offers to add one")
+
+        // Shortcuts for every profile at once, as the dialog's checkbox adds them.
+        let examples = [Shortcut(title: "Example", url: "https://example.com/"),
+                        Shortcut(title: "Example Org", url: "https://example.org/"),
+                        Shortcut(title: "Example Net", url: "https://example.net/")]
+        controller.testChangeShortcuts { state in
+            for shortcut in examples { state.addShortcut(shortcut, to: state.profiles[0].id, everywhere: true) }
+        }
+        let tiles = examples.map(\.title) + ["Tambah pintasan"]
+        check(panes.allSatisfy { $0.testShortcutTitles == tiles }
+              && StateStore.shared.data.profiles.allSatisfy { $0.shortcuts == examples },
+              "Shortcuts added to every profile show on every start page")
         if let shot = snapshotURL("start") {
             await pause(1)
             await controller.writeSnapshot(to: shot)
@@ -277,8 +292,29 @@ final class UISelfTest: NSObject, NSApplicationDelegate {
               "An address typed on the start page opens in its pane (\(typed.webView.url?.absoluteString ?? "-"))")
         check(StateStore.shared.data.profiles[1].url == "https://example.com",
               "The profile keeps that address as its page right away")
-        check(panes[0].isShowingStartPage && panes[2].isShowingStartPage && panes[3].isShowingStartPage,
-              "The other panes stay on their start page")
+
+        // A shortcut in the third pane.
+        panes[2].testClickShortcut("Example Org")
+        check(!panes[2].isShowingStartPage && panes[2].webView.url?.host == "example.org"
+              && StateStore.shared.data.profiles[2].url == "https://example.org/",
+              "A shortcut opens its site in its pane, as the profile's page")
+        check(panes[0].isShowingStartPage && panes[3].isShowingStartPage, "The other panes stay on their start page")
+
+        // Beranda over the page of the second pane, and back.
+        typed.homePane(nil)
+        check(typed.isShowingStartPage && typed.webView.isHidden && typed.webView.url?.host == "example.com"
+              && controller.focusedPane === typed && typed.testShortcutTitles == tiles,
+              "Beranda shows the start page, with the page waiting behind it")
+        typed.backPane(nil)
+        check(!typed.isShowingStartPage && !typed.webView.isHidden && typed.webView.url?.host == "example.com",
+              "Kembali on the start page returns to that page")
+
+        // Removing a shortcut in the first pane, as its menu does.
+        panes[0].testRemoveShortcut("Example")
+        check(panes[0].testShortcutTitles == ["Example Org", "Example Net", "Tambah pintasan"]
+              && panes[3].testShortcutTitles == tiles
+              && StateStore.shared.data.profiles.map(\.shortcuts.count) == [2, 3, 3, 3],
+              "Removing a shortcut removes it from that profile only")
         await pause(1)
         return true
     }

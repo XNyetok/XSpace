@@ -37,6 +37,15 @@ final class AddressBarTests: XCTestCase {
         XCTAssertEqual(resolve("192.168.1.1/admin"), "http://192.168.1.1/admin")
     }
 
+    /// What shortcuts accept: addresses, not search terms.
+    func testSearchTermsAreNoAddress() {
+        XCTAssertEqual(PaneView.address("example.com")?.absoluteString, "https://example.com")
+        XCTAssertEqual(PaneView.address("localhost:3000")?.absoluteString, "http://localhost:3000")
+        XCTAssertNil(PaneView.address("gemini api pricing"))
+        XCTAssertNil(PaneView.address("1.5 kg"))
+        XCTAssertNil(PaneView.address(""))
+    }
+
     @MainActor
     func testOtherTextIsAGoogleSearch() {
         XCTAssertEqual(resolve("gemini api pricing"), "https://www.google.com/search?q=gemini%20api%20pricing")

@@ -131,6 +131,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         viewMenu.addItem(item("Muat Ulang Pane", #selector(PaneView.reloadPane(_:)), "r"))
         viewMenu.addItem(item("Kembali", #selector(PaneView.backPane(_:)), "["))
         viewMenu.addItem(item("Maju", #selector(PaneView.forwardPane(_:)), "]"))
+        viewMenu.addItem(item("Halaman Awal", #selector(PaneView.homePane(_:)), "h", [.command, .shift]))
         viewMenu.addItem(item("Buka Lokasi…", #selector(PaneView.openLocation(_:)), "l"))
         viewMenu.addItem(.separator())
         viewMenu.addItem(item("Perbesar", #selector(PaneView.zoomInPane(_:)), "="))
