@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-01
+
 ### Added
 - Layouts: the **Tata Letak** button arranges the profiles as **Otomatis** (every profile in a
   grid), 1, 2 side by side, 2 stacked, 3 side by side, 2 × 2, 1 + 2 or 1 + 3, for example one
@@ -125,7 +127,8 @@ All notable changes to this project are documented here. The format follows
   panes, popups that stay in their profile, downloads, uploads, camera/microphone prompts.
 - Self-tests for profile isolation and persistence.
 
-[Unreleased]: https://github.com/XNyetok/XSpace/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/XNyetok/XSpace/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/XNyetok/XSpace/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/XNyetok/XSpace/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/XNyetok/XSpace/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/XNyetok/XSpace/releases/tag/v0.3.1
