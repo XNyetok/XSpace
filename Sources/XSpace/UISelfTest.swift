@@ -340,21 +340,23 @@ final class UISelfTest: NSObject, NSApplicationDelegate {
     }
 
     /// [6]: splitting and closing panes, from the Pane menu and from the pane's own menu.
-    /// `workspace` shows two panes of the first profile side by side.
+    /// `workspace` shows two panes of the first profile side by side at 30 % | 70 % (see [0]). The
+    /// right one is split: a pane needs room for two panes, also on the smaller screen in CI.
     private func checkSplittingAndClosing(_ controller: MainWindowController, _ workspace: WorkspaceView,
                                           second: (id: UUID, name: String)) {
         let (left, right) = (workspace.panes[0], workspace.panes[1])
         workspace.layoutSubtreeIfNeeded()
         let widthsBefore = [left.frame.width, right.frame.width]
-        controller.window?.makeFirstResponder(left.webView)
+        controller.window?.makeFirstResponder(right.webView)
         controller.splitPaneRight(nil)
         workspace.layoutSubtreeIfNeeded()
         var panes = workspace.panes
-        guard panes.count == 3 else { return check(false, "Bagi ke Kanan adds a pane (\(panes.count) panes)") }
-        let added = panes[1]
-        check(panes[0] === left && panes[2] === right && added.profile.id == left.profile.id
-              && workspace.urls[1] == workspace.urls[0]
-              && left.frame.maxX < added.frame.minX && added.frame.maxX < right.frame.minX
+        guard panes.count == 3 else {
+            return check(false, "Bagi ke Kanan adds a pane (\(panes.count) panes; the pane is \(Int(widthsBefore[1])) pt wide)")
+        }
+        let added = panes[2]
+        check(panes[0] === left && panes[1] === right && added.profile.id == right.profile.id
+              && workspace.urls[2] == workspace.urls[1] && right.frame.maxX < added.frame.minX
               && controller.focusedPane === added,
               "Bagi ke Kanan: a new pane right of it, same profile and page, with the focus; the others keep running")
 
@@ -366,9 +368,11 @@ final class UISelfTest: NSObject, NSApplicationDelegate {
         down.performActionForItem(at: index)
         workspace.layoutSubtreeIfNeeded()
         panes = workspace.panes
-        guard panes.count == 4 else { return check(false, "Bagi ke Bawah adds a pane (\(panes.count) panes)") }
-        let below = panes[2]
-        check(panes[1] === added && panes[3] === right && below.profile.id == second.id
+        guard panes.count == 4 else {
+            return check(false, "Bagi ke Bawah adds a pane (\(panes.count) panes; the pane is \(Int(added.frame.height)) pt high)")
+        }
+        let below = panes[3]
+        check(panes[1] === right && panes[2] === added && below.profile.id == second.id
               && added.superview === below.superview && added.frame.minY > below.frame.maxY,
               "Bagi ke Bawah from the pane's menu: a pane below it, in the profile chosen")
         let saved = StateStore.shared.data.workspaces.first { $0.id == workspace.id }?.root.panes.map(\.profileID)
@@ -376,8 +380,8 @@ final class UISelfTest: NSObject, NSApplicationDelegate {
 
         controller.window?.makeFirstResponder(below.webView)
         controller.closePane(nil)
-        check(workspace.panes.count == 3 && controller.focusedPane === right,
-              "Tutup Pane closes the pane you are in, and the focus moves to the next pane")
+        check(workspace.panes.count == 3 && controller.focusedPane === added,
+              "Tutup Pane closes the pane you are in, and the focus moves to the pane next to it")
         controller.window?.makeFirstResponder(added.webView)
         controller.closePane(nil)
         workspace.layoutSubtreeIfNeeded()
