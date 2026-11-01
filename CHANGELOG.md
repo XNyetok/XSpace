@@ -7,20 +7,24 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased]
 
 ### Added
-- Workspaces: every entry in the toolbar is now a layout of panes, side by side and stacked, and
-  each pane can show any profile, so one workspace can show several accounts at once. Existing
-  profiles became workspaces with the same panes. XSpace 0.5.0 can still open the saved state
-  and shows every profile with its panes.
-- Show a pane in another profile: click the profile name at the left of the pane's toolbar, or
-  use **Pane → Ganti Profil Pane**. The page opens again in that profile.
-- Split a pane to the right or down (⌃⌘→ / ⌃⌘↓, the new **Pane** menu, or the profile name's
-  menu, where the new pane can start in any profile), and close a pane (⌃⌘W). For example: one
-  tall pane on the left and three stacked on the right.
+- Layouts: the **Tata Letak** button arranges the profiles as **Otomatis** (every profile in a
+  grid), 1, 2 side by side, 2 stacked, 3 side by side, 2 × 2, 1 + 2 or 1 + 3, for example one
+  tall pane on the left and three stacked on the right. Every layout remembers its profiles and
+  the sizes of its panes.
+- The toolbar highlights the profiles on screen. Clicking another one (or ⌘1–⌘9) shows it in
+  the pane you are in. The profile name in a pane lists the profiles to show there; one shown
+  elsewhere trades places with it. An empty slot offers the hidden profiles or a new one.
 
 ### Changed
-- The pane and profile commands act on the pane you are in. **Tukar Posisi Pane** (⌃⌘X) swaps it
-  with its neighbor, also when the panes are stacked, and moved to the **Pane** menu together
-  with **Atur Ulang Pane ke Default**.
+- Every profile is now one pane, with one page, instead of two panes (Google AI Studio | Google
+  Sheets). Existing profiles keep the page of their first pane; you stay signed in. If you want
+  two pages of one account side by side, add a second profile and sign in there too.
+- **Fokus / Semua** became the layouts 1 and Otomatis; ⌃⌘G switches between one profile (the one
+  you are in) and the layout before. **Tukar Posisi Pane** (⌃⌘X) is in the **Tampilan** menu
+  and swaps the pane you are in with the next one; **Atur Ulang Pane ke Default** is gone.
+- A new profile fills an empty slot of the layout, or the pane you are in, and opens Google AI
+  Studio. The profile commands act on the profile you are in.
+- XSpace 0.5.0 can still open the saved state: it shows every profile with one pane.
 
 ### Fixed
 - A page that is not on screen could take the keyboard focus, for example a sign-in page loading

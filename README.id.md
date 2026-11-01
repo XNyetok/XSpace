@@ -2,10 +2,10 @@
 
 **Banyak profil browser yang terisolasi dalam satu jendela macOS. Native, ringan, privat.**
 
-XSpace menaruh beberapa "browser" berdampingan dalam satu jendela. Setiap profil punya cookie,
-login, dan data situs sendiri yang terpisah total dari profil lain. Contoh pemakaian: Google
-AI Studio di samping Google Sheets untuk beberapa akun Google sekaligus, tanpa akun saling
-bercampur dan tanpa banyak jendela browser yang tersebar di beberapa Space.
+XSpace menaruh beberapa "browser" berdampingan dalam satu jendela: setiap profil adalah satu pane
+dengan cookie, login, dan data situs sendiri yang terpisah total dari profil lain. Contoh
+pemakaian: Google AI Studio untuk beberapa akun Google sekaligus dalam satu grid, tanpa akun
+saling bercampur dan tanpa banyak jendela browser yang tersebar di beberapa Space.
 
 > **Status:** prototype awal (0.x). macOS 26+.
 >
@@ -24,10 +24,9 @@ bercampur dan tanpa banyak jendela browser yang tersebar di beberapa Space.
 ## Fitur
 
 - Profil dengan data situs terisolasi penuh (satu `WKWebsiteDataStore(forIdentifier:)` per profil)
-- Ruang kerja: pane berdampingan dan bertumpuk, bisa diubah ukurannya dan ditukar posisinya,
-  masing-masing di profil pilihan Anda, jadi satu ruang kerja bisa menampilkan beberapa akun
-  sekaligus (profil baru dimulai dengan Google AI Studio | Google Sheets)
-- Mode **Fokus** (satu ruang kerja) dan **Semua** (semua ruang kerja ditumpuk sebagai grid)
+- Satu pane per profil, diatur dengan tata letak: **Otomatis** (semua profil dalam grid), 1,
+  2 berdampingan, 2 bertumpuk, 3 berdampingan, 2 × 2, 1 + 2, atau 1 + 3. Ukuran pane bisa
+  diubah dan posisinya ditukar, dan setiap tata letak mengingat profil dan ukurannya
 - Warna per profil dan bingkai pane, supaya selalu jelas sedang di akun mana
 - Popup dan jendela login tetap di dalam profilnya
 - Hemat RAM: lazy load, pembekuan otomatis profil tersembunyi, indikator RAM
@@ -78,22 +77,20 @@ notarisasi.
 
 | Aksi | Cara |
 |---|---|
-| Pindah ruang kerja | klik di toolbar (namanya mengikuti profilnya), atau ⌘1–⌘9 |
-| Tambah profil (dengan ruang kerjanya sendiri) | tombol **+** atau ⇧⌘N |
+| Pilih tata letak | tombol **Tata Letak** di toolbar, atau menu **Tampilan → Tata Letak** |
+| Tampilkan profil | klik di toolbar (yang sedang tampil disorot), atau ⌘1–⌘9: profil yang tersembunyi menggantikan pane yang aktif |
+| Pilih profil sebuah pane | klik nama profil di kiri toolbar pane (profil yang tampil di tempat lain bertukar posisi) |
+| Hanya profil yang aktif, lalu kembali | ⌃⌘G (**Tampilan → Tampilkan Satu Profil**) |
+| Tukar posisi dua pane | tombol ⇄ di antara dua pane yang berdampingan, atau ⌃⌘X untuk pane aktif dan pane berikutnya |
+| Tambah profil | tombol **+** atau ⇧⌘N: mengisi slot kosong, atau pane yang aktif |
 | Ganti nama/warna atau hapus profil | tombol **⋯** atau menu **Profil** |
-| Satu ruang kerja / semua sekaligus | **Fokus / Semua** di kanan atas, atau ⌃⌘G |
-| Tampilkan pane di profil lain | klik nama profil di kiri toolbar pane, atau menu **Pane → Ganti Profil Pane** |
-| Bagi pane | menu nama profil (pane baru bisa langsung di profil lain), **Pane → Bagi ke Kanan / Bagi ke Bawah**, atau ⌃⌘→ / ⌃⌘↓ |
-| Tutup pane | menu nama profil, **Pane → Tutup Pane**, atau ⌃⌘W |
-| Tukar posisi dua pane | tombol ⇄ di antara pane yang berdampingan, atau ⌃⌘X (**Pane → Tukar Posisi Pane**) untuk sebuah pane dan tetangganya |
-| Kembali ke pane default | tombol **⋯** atau **Pane → Atur Ulang Pane ke Default** |
 | Kolom alamat pane aktif | ⌘L |
 | Muat ulang / kembali / maju | ⌘R / ⌘[ / ⌘] |
 | Zoom pane | ⌘= / ⌘- / ⌘0 |
 | Ubah ukuran pane | geser pembatas; klik dua kali = rata lagi |
 | Pemakaian & pengaturan hemat RAM | indikator **RAM …**, atau menu **Tampilan → Hemat RAM** |
 
-Perintah pane dan profil berlaku untuk pane yang aktif, yaitu yang sedang menerima ketikan.
+Profil yang aktif adalah yang panenya sedang menerima ketikan; perintah profil berlaku untuknya.
 
 ### Hemat RAM
 
@@ -140,13 +137,13 @@ profil; sesinya tersimpan.
 ## Pengembangan
 
 ```bash
-swift test                 # unit test: kolom alamat, state tersimpan, ruang kerja, pembagi pane, ...
+swift test                 # unit test: kolom alamat, state tersimpan, tata letak, pembagi pane, ...
 APP=build/XSpace.app/Contents/MacOS/XSpace
 $APP --selftest            # isolasi profil, halaman Google, User-Agent, persistensi (tulis)
 $APP --selftest-persist    # persistensi (baca ulang) + bersih-bersih
 $APP --selftest-ui         # jendela sungguhan dengan state sementara: upgrade dari 0.5.0,
-                           # pembekuan, tukar/bagi/tutup pane, ruang kerja dengan beberapa
-                           # profil, hapus profil, indikator RAM
+                           # pembekuan, tata letak, menampilkan dan menukar profil, fokus
+                           # keyboard, hapus profil, indikator RAM
 ```
 
 Semua self-test memakai profil uji sementara dan tidak menyentuh profil asli. Set
@@ -156,13 +153,13 @@ Semua self-test memakai profil uji sementara dan tidak menyentuh profil asli. Se
 
 | File | Isi |
 |---|---|
-| `Sources/XSpace/Models.swift` | state yang disimpan; satu profil = satu `WKWebsiteDataStore` |
-| `Sources/XSpace/Workspace.swift` | ruang kerja: pohon tata letak pane, migrasi dari 0.5.0, aturan untuk tata letak yang disimpan |
+| `Sources/XSpace/Models.swift` | state yang disimpan (halaman tiap profil, tata letak); satu profil = satu `WKWebsiteDataStore` |
+| `Sources/XSpace/Grid.swift` | tata letak: preset sebagai pohon slot, grid otomatis |
 | `Sources/XSpace/WebKitSupport.swift` | konfigurasi webview, User-Agent Safari, penghapusan data store, unduhan, halaman error |
 | `Sources/XSpace/PaneView.swift` | satu pane: toolbar mini + `WKWebView` + delegate navigasi/UI |
-| `Sources/XSpace/WorkspaceView.swift` | pane satu ruang kerja (lazy load, pembekuan), container ruang kerja |
+| `Sources/XSpace/GridView.swift` | pane di slot tata letak, pane tersembunyi, slot kosong, ikon tata letak |
 | `Sources/XSpace/PaneSplitView.swift` | pembagi pane: berdampingan atau bertumpuk, bersarang, tombol tukar |
-| `Sources/XSpace/MainWindowController.swift` | jendela utama, toolbar, aksi ruang kerja dan profil, hemat RAM |
+| `Sources/XSpace/MainWindowController.swift` | jendela utama, toolbar, profil dan tata letak, hemat RAM |
 | `Sources/XSpace/MemoryMonitor.swift` | pengukuran memori dan pemantau tekanan memori macOS |
 | `Sources/XSpace/PopupWindowController.swift` | popup yang tetap di profilnya |
 | `Sources/XSpace/AppDelegate.swift` | menu dan siklus hidup app |
@@ -177,11 +174,6 @@ Indonesia atau Inggris.
 ## Rencana
 
 - UI bahasa Inggris dan lokalisasi yang rapi (Indonesia + Inggris)
-- Layout fleksibel dengan ruang kerja (workspace), yang menggantikan daftar profil di toolbar:
-  - pane dalam baris dan kolom, misalnya satu pane tinggi di kiri dan tiga bertumpuk di kanan
-  - profil apa pun di pane mana pun, jadi satu ruang kerja bisa menampilkan beberapa akun sekaligus
-  - preset seperti 2 kolom, 2×2, dan 1 + 3
-  - profil yang sudah ada otomatis menjadi ruang kerja dengan pane yang sama
 - Rilis yang ditandatangani Developer ID dan dinotarisasi (saat ini rilis masih ad-hoc)
 - Proxy per profil (opsional)
 - Notifikasi web diteruskan ke notifikasi macOS

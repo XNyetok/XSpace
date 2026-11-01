@@ -2,10 +2,10 @@
 
 **Several isolated browser profiles in one macOS window. Native, lightweight, private.**
 
-XSpace puts several "browsers" side by side in a single window. Every profile has its own
-cookies, logins and website data, completely separate from the other profiles. A typical
-setup: Google AI Studio next to Google Sheets, for several Google accounts, without the
-accounts ever mixing and without a pile of browser windows spread across Spaces.
+XSpace puts several "browsers" side by side in a single window: every profile is one pane with
+its own cookies, logins and website data, completely separate from the other profiles. A
+typical setup: Google AI Studio for several Google accounts in a grid, without the accounts ever
+mixing and without a pile of browser windows spread across Spaces.
 
 > **Status:** early prototype (0.x). macOS 26+. The app UI is in Indonesian for now —
 > localization is planned and contributions are welcome.
@@ -25,10 +25,9 @@ accounts ever mixing and without a pile of browser windows spread across Spaces.
 ## Features
 
 - Profiles with fully isolated website data (one `WKWebsiteDataStore(forIdentifier:)` each)
-- Workspaces: panes side by side and stacked, resizable and swappable, each in the profile you
-  choose, so one workspace can show several accounts at once (a new profile starts with Google
-  AI Studio | Google Sheets)
-- **Focus** mode (one workspace) and **All** mode (every workspace stacked in a grid)
+- One pane per profile, arranged by a layout: **Otomatis** (every profile in a grid), 1, 2 side
+  by side, 2 stacked, 3 side by side, 2 × 2, 1 + 2 or 1 + 3. Panes can be resized and swapped,
+  and every layout remembers its profiles and sizes
 - Color-coded profiles and pane borders, so you always know which account you are in
 - Popups and sign-in windows stay inside their profile
 - Memory saving: lazy loading, automatic freezing of hidden profiles, RAM indicator
@@ -78,22 +77,21 @@ that. Developer ID signatures also get the secure timestamp that notarization re
 
 | Action | How |
 |---|---|
-| Switch workspace | click it in the toolbar (it is named after its profiles), or ⌘1–⌘9 |
-| Add a profile (in a workspace of its own) | **+** button or ⇧⌘N |
+| Choose a layout | the **Tata Letak** button in the toolbar, or **Tampilan → Tata Letak** |
+| Show a profile | click it in the toolbar (the ones on screen are highlighted), or ⌘1–⌘9: a hidden profile takes the place of the pane you are in |
+| Choose the profile of a pane | click the profile name at the left of the pane's toolbar (a profile shown elsewhere trades places) |
+| Only the profile you are in, and back | ⌃⌘G (**Tampilan → Tampilkan Satu Profil**) |
+| Swap two panes | the ⇄ button between two panes side by side, or ⌃⌘X for the pane you are in and the next one |
+| Add a profile | **+** button or ⇧⌘N: it fills an empty slot, or the pane you are in |
 | Rename, recolor or delete a profile | **⋯** button or the **Profil** menu |
-| One workspace / all of them | **Fokus / Semua** (top right) or ⌃⌘G |
-| Show a pane in another profile | click the profile name at the left of the pane's toolbar, or **Pane → Ganti Profil Pane** |
-| Split a pane | the profile name's menu (the new pane can start in any profile), **Pane → Bagi ke Kanan / Bagi ke Bawah**, or ⌃⌘→ / ⌃⌘↓ |
-| Close a pane | the profile name's menu, **Pane → Tutup Pane**, or ⌃⌘W |
-| Swap two panes | the ⇄ button between panes side by side, or ⌃⌘X (**Pane → Tukar Posisi Pane**) for a pane and its neighbor |
-| Back to the default panes | **⋯** button or **Pane → Atur Ulang Pane ke Default** |
 | Address bar of the focused pane | ⌘L |
 | Reload / back / forward | ⌘R / ⌘[ / ⌘] |
 | Zoom a pane | ⌘= / ⌘- / ⌘0 |
 | Resize panes | drag the divider; double-click it to equalize |
 | Memory usage and saving | the **RAM …** indicator, or **Tampilan → Hemat RAM** |
 
-The pane and profile commands act on the pane you are in: the one with the keyboard focus.
+The profile you are in is the one whose pane has the keyboard focus; the commands for a profile
+act on it.
 
 ### Memory saving
 
@@ -139,13 +137,13 @@ sign in once per profile; the session is kept.
 ## Development
 
 ```bash
-swift test                 # unit tests: address bar, saved state, workspaces, pane splitter, ...
+swift test                 # unit tests: address bar, saved state, layouts, pane splitter, ...
 APP=build/XSpace.app/Contents/MacOS/XSpace
 $APP --selftest            # profile isolation, Google pages, User-Agent, persistence (write)
 $APP --selftest-persist    # persistence (read back) + cleanup
 $APP --selftest-ui         # real window with throwaway state: upgrading from 0.5.0, freezing,
-                           # swapping, splitting and closing panes, a workspace with several
-                           # profiles, deleting a profile, RAM indicator
+                           # layouts, showing and swapping profiles, keyboard focus, deleting a
+                           # profile, RAM indicator
 ```
 
 All self-tests use their own throwaway profiles and never touch your real ones. Set
@@ -155,13 +153,13 @@ All self-tests use their own throwaway profiles and never touch your real ones. 
 
 | File | Contents |
 |---|---|
-| `Sources/XSpace/Models.swift` | persisted state; one profile = one `WKWebsiteDataStore` |
-| `Sources/XSpace/Workspace.swift` | workspaces: layout tree of panes, migration from 0.5.0, rules for saved layouts |
+| `Sources/XSpace/Models.swift` | persisted state (a page per profile, the layout); one profile = one `WKWebsiteDataStore` |
+| `Sources/XSpace/Grid.swift` | layouts: the presets as trees of slots, the automatic grid |
 | `Sources/XSpace/WebKitSupport.swift` | web view configuration, Safari User-Agent, deleting data stores, downloads, error page |
 | `Sources/XSpace/PaneView.swift` | one pane: mini toolbar + `WKWebView` + navigation/UI delegates |
-| `Sources/XSpace/WorkspaceView.swift` | one workspace's panes (lazy loading, freezing), container of the workspaces |
+| `Sources/XSpace/GridView.swift` | the panes in the slots of the layout, hidden panes, empty slots, layout icons |
 | `Sources/XSpace/PaneSplitView.swift` | pane splitter: side by side or stacked, nested, swap button |
-| `Sources/XSpace/MainWindowController.swift` | main window, toolbar, workspace and profile actions, memory saving |
+| `Sources/XSpace/MainWindowController.swift` | main window, toolbar, profiles and layouts, memory saving |
 | `Sources/XSpace/MemoryMonitor.swift` | memory measurement and macOS memory-pressure watcher |
 | `Sources/XSpace/PopupWindowController.swift` | popups that stay in their profile |
 | `Sources/XSpace/AppDelegate.swift` | menus and app lifecycle |
@@ -175,11 +173,6 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
 ## Roadmap
 
 - English UI and proper localization (Indonesian + English)
-- Flexible layouts with workspaces, which replace the profile list in the toolbar:
-  - panes in rows and columns, for example one tall pane on the left and three stacked on the right
-  - any profile in any pane, so one workspace can show several accounts side by side
-  - presets such as 2 columns, 2×2 and 1 + 3
-  - existing profiles automatically become workspaces with the same panes
 - Notarized releases signed with a Developer ID (releases are ad-hoc signed for now)
 - Optional per-profile proxy
 - Web notifications bridged to macOS notifications
