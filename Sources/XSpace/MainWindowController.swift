@@ -693,6 +693,34 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         if let workspace = workspaces.first(where: { self.title(of: $0) == title }) { select(workspace) }
     }
 
+    func testWorkspace(id: UUID) -> WorkspaceView? {
+        workspaceViews[id]
+    }
+
+    func testSelectWorkspace(id: UUID) {
+        if let workspace = workspaces.first(where: { $0.id == id }) { select(workspace) }
+    }
+
+    /// Adds a workspace with the given layout and shows it (the window cannot create one yet).
+    @discardableResult
+    func testAddWorkspace(_ root: LayoutNode) -> UUID {
+        let workspace = WorkspaceState(id: UUID(), name: nil, root: root)
+        state.data.workspaces.append(workspace)
+        attach(workspace)
+        state.data.selectedWorkspaceID = workspace.id
+        state.save()
+        rebuildSwitcher()
+        applyVisibility()
+        return workspace.id
+    }
+
+    /// A profile's live panes, in every workspace.
+    func testPanes(of profileID: UUID) -> [PaneView] {
+        workspaces.compactMap { workspaceViews[$0.id] }.flatMap { view in
+            view.panes.filter { $0.profile.id == profileID }
+        }
+    }
+
     func testSetPolicy(_ policy: HibernatePolicy) {
         state.data.hibernatePolicy = policy
         applyVisibility()
