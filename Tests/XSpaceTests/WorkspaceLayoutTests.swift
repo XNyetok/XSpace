@@ -209,14 +209,17 @@ final class WorkspaceLayoutTests: XCTestCase {
         XCTAssertEqual(normalized.map { $0.root.panes.count }, [2, 1])
     }
 
-    func testEveryProfileGetsAWorkspace() {
+    func testAProfileWithoutPanesGetsNoWorkspace() {
         let aWorkspace = WorkspaceState(migrating: profile(profileA))
+        let normalized = WorkspaceState.normalized([aWorkspace], profiles: [profile(profileA), profile(profileB)])
+        XCTAssertEqual(normalized, [aWorkspace], "B stays available for panes")
+    }
+
+    func testWithoutAnyWorkspaceEveryProfileGetsOne() {
         let b = profile(profileB, panes: ["https://b.example/"])
-        let normalized = WorkspaceState.normalized([aWorkspace], profiles: [profile(profileA), b])
-        XCTAssertEqual(normalized.count, 2)
-        XCTAssertEqual(normalized[0], aWorkspace)
+        let normalized = WorkspaceState.normalized([workspace(split(.vertical, []))], profiles: [profile(profileA), b])
+        XCTAssertEqual(normalized.map { $0.root.panes.map(\.profileID) }, [[profileA, profileA], [profileB]])
         XCTAssertEqual(normalized[1].root.panes.map(\.url), ["https://b.example/"])
-        XCTAssertEqual(normalized[1].root.panes.map(\.profileID), [profileB])
     }
 
     func testRulesAppliedTwiceChangeNothingMore() {

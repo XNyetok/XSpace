@@ -206,6 +206,42 @@ final class SavedStateTests: XCTestCase {
         XCTAssertEqual(state.pendingDeletion, [first])
     }
 
+    /// A profile whose panes all show other profiles now (see WorkspaceState.normalized).
+    func testAProfileWithoutPanesStaysWithoutAWorkspace() throws {
+        var state = AppStateData()
+        let first = state.addProfile(name: "Akun 1", colorIndex: 0)
+        let second = state.addProfile(name: "Akun 2", colorIndex: 1)
+        state.workspaces.removeAll { $0.id == second.workspace.id }
+        state.selectedWorkspaceID = first.workspace.id
+        let written = try state.encodedForDisk()
+
+        let decoded = try JSONDecoder().decode(AppStateData.self, from: written)
+        XCTAssertEqual(decoded.profiles.map(\.id), [first.profile.id, second.profile.id])
+        XCTAssertEqual(decoded.workspaces.map(\.id), [first.workspace.id])
+        let legacy = try JSONDecoder().decode(Legacy050State.self, from: written)
+        XCTAssertEqual(legacy.profiles[1].panes.map(\.url), Defaults.paneURLs, "0.5.0 still shows it")
+    }
+
+    func testWithoutWorkspacesEveryProfileGetsOneAgain() throws {
+        let id = UUID()
+        let state = try decode("""
+            {"version": 2, "workspaces": [], "profiles": [
+              {"id": "\(id)", "name": "Akun 1", "colorIndex": 0, "panes": [{"url": "https://a.example/"}]}]}
+            """)
+        XCTAssertEqual(state.workspaces.map { $0.root.panes.map(\.url) }, [["https://a.example/"]])
+        XCTAssertEqual(state.selectedWorkspaceID, state.workspaces.first?.id)
+    }
+
+    func testDeletingTheOnlyProfileWithPanesGivesTheOthersAWorkspace() {
+        var state = AppStateData()
+        let first = state.addProfile(name: "Akun 1", colorIndex: 0)
+        let second = state.addProfile(name: "Akun 2", colorIndex: 1)
+        state.workspaces.removeAll { $0.id == second.workspace.id }
+        state.removeProfile(first.profile.id)
+        XCTAssertEqual(state.workspaces.map { $0.root.panes.map(\.profileID) }, [[second.profile.id, second.profile.id]])
+        XCTAssertEqual(state.selectedWorkspaceID, state.workspaces.first?.id)
+    }
+
     private func splitID(of workspace: WorkspaceState) -> UUID {
         guard case .split(let split) = workspace.root else { return UUID() }
         return split.id

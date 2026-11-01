@@ -137,7 +137,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
     }
 
     /// Brings the workspace views in line with the saved workspaces after these changed: the
-    /// views of removed workspaces are destroyed, the others take over their new layout.
+    /// views of removed workspaces are destroyed, the others take over their new layout, and new
+    /// workspaces get a view.
     private func syncWorkspaceViews() {
         let saved = Dictionary(uniqueKeysWithValues: workspaces.map { ($0.id, $0.root) })
         for (id, view) in workspaceViews {
@@ -149,6 +150,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
                 workspaceViews[id] = nil
                 hiddenSince[id] = nil
             }
+        }
+        for workspace in workspaces where workspaceViews[workspace.id] == nil {
+            attach(workspace)
         }
     }
 

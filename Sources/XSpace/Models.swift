@@ -92,7 +92,13 @@ struct AppStateData: Codable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         version = try c.decodeIfPresent(Int.self, forKey: .version) ?? 1
         profiles = try c.decodeIfPresent([ProfileState].self, forKey: .profiles) ?? []
-        workspaces = (try? c.decodeIfPresent([WorkspaceState].self, forKey: .workspaces)) ?? []
+        if let saved = try? c.decodeIfPresent([WorkspaceState].self, forKey: .workspaces) {
+            workspaces = saved
+        } else {
+            // A file from 0.5.0, or saved again by 0.5.0, has no workspaces: every profile becomes
+            // one with its panes. So do workspaces that cannot be read.
+            workspaces = profiles.map(WorkspaceState.init(migrating:))
+        }
         selectedWorkspaceID = try? c.decodeIfPresent(UUID.self, forKey: .selectedWorkspaceID)
         selectedProfileID = try c.decodeIfPresent(UUID.self, forKey: .selectedProfileID)
         showAll = try c.decodeIfPresent(Bool.self, forKey: .showAll) ?? false
@@ -159,6 +165,10 @@ struct AppStateData: Codable {
             var kept = workspace
             kept.root = root
             return kept
+        }
+        if workspaces.isEmpty {
+            // The other profiles had no panes: each gets a workspace again, so the window is not empty.
+            workspaces = profiles.map(WorkspaceState.init(migrating:))
         }
         if !workspaces.contains(where: { $0.id == selectedWorkspaceID }) {
             selectedWorkspaceID = workspaces.first?.id

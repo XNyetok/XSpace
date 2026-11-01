@@ -214,8 +214,8 @@ extension WorkspaceState {
     /// Workspaces as XSpace shows them, from whatever state.json contained: panes of profiles that
     /// do not exist are dropped, sizes that do not fit are reset, splits with one child are
     /// replaced by it, duplicate IDs get new ones and workspaces without panes are removed.
-    /// A profile that no workspace shows gets a workspace of its own (its 0.5.0 panes, or the
-    /// default ones), so every profile can still be opened, renamed and deleted.
+    /// A profile does not need a pane: one that no workspace shows stays available for panes.
+    /// Only when no workspace is left does every profile get one again (see init(migrating:)).
     static func normalized(_ workspaces: [WorkspaceState], profiles: [ProfileState]) -> [WorkspaceState] {
         let known = Set(profiles.map(\.id))
         var seen = Set<UUID>()
@@ -229,11 +229,7 @@ extension WorkspaceState {
             workspace.root = root.withUniqueIDs(seen: &seen)
             result.append(workspace)
         }
-        let shown = Set(result.flatMap { $0.root.panes.map(\.profileID) })
-        for profile in profiles where !shown.contains(profile.id) {
-            result.append(WorkspaceState(migrating: profile))
-        }
-        return result
+        return result.isEmpty ? profiles.map(WorkspaceState.init(migrating:)) : result
     }
 
     /// The profiles as 0.5.0 reads them from state.json. 0.5.0 knows panes per profile and no
