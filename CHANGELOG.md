@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-01
+
 ### Changed
 - Deleting a profile removes its data from disk as soon as WebKit lets go of it, usually within a
   few seconds. Before, XSpace retried after 1, 4 and 10 seconds. If WebKit holds on to the data
@@ -95,6 +97,7 @@ All notable changes to this project are documented here. The format follows
   panes, popups that stay in their profile, downloads, uploads, camera/microphone prompts.
 - Self-tests for profile isolation and persistence.
 
-[Unreleased]: https://github.com/XNyetok/XSpace/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/XNyetok/XSpace/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/XNyetok/XSpace/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/XNyetok/XSpace/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/XNyetok/XSpace/releases/tag/v0.3.1
