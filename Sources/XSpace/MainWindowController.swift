@@ -654,10 +654,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         applyVisibility()
     }
 
-    /// Destroys every profile without dialogs and returns their IDs so the data stores can be deleted.
-    func testDestroyAll() -> [UUID] {
-        let ids = profiles.map(\.id)
-        for id in ids {
+    /// Destroys every profile without dialogs. The UI self-test then deletes their data stores.
+    func testDestroyAll() {
+        for id in profiles.map(\.id) {
             PopupWindowController.closeAll(for: id)
             if let row = rows.removeValue(forKey: id) {
                 row.destroy()
@@ -669,6 +668,5 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         housekeepingTimer?.invalidate()
         state.data.profiles.removeAll()
         state.save()
-        return ids
     }
 }

@@ -132,10 +132,11 @@ final class UISelfTest: NSObject, NSApplicationDelegate {
         }
 
         log("\n[6] Clean up")
-        let ids = controller.testDestroyAll()
+        let removals = controller.profiles.map { DataStoreRemoval($0.store) }
+        controller.testDestroyAll()
         controller.close()
-        for id in ids {
-            check(await WebKitSupport.removeDataStore(id), "Test profile \(id.uuidString.prefix(8))… deleted")
+        for removal in removals {
+            await checkRemoval(removal, "Test profile \(removal.shortID)… deleted")
         }
     }
 
@@ -156,6 +157,12 @@ final class UISelfTest: NSObject, NSApplicationDelegate {
     private func check(_ ok: Bool, _ label: String) {
         log("\(ok ? "  PASS" : "  FAIL")  \(label)")
         if !ok { failures += 1 }
+    }
+
+    /// Deletes a test profile's data store once WebKit has released it, and checks the result.
+    private func checkRemoval(_ removal: DataStoreRemoval, _ label: String) async {
+        let failure = await removal.remove()
+        check(failure == nil, failure.map { "\(label) (\($0))" } ?? label)
     }
 
     private func log(_ text: String) {

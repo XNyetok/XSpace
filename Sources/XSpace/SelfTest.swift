@@ -129,12 +129,13 @@ final class SelfTest: NSObject, NSApplicationDelegate {
 
         // [4] Clean up test profiles A and B
         log("\n[4] Deleting test profiles A and B")
+        let removals = [DataStoreRemoval(storeA!), DataStoreRemoval(storeB!)]
         webA = nil
         webB = nil
         storeA = nil
         storeB = nil
-        for id in [idA, idB] {
-            check(await WebKitSupport.removeDataStore(id), "Test profile \(id.uuidString.prefix(8))… deleted")
+        for removal in removals {
+            await checkRemoval(removal, "Test profile \(removal.shortID)… deleted")
         }
 
         // Same as quitting the app: flush cookies explicitly, then give WebKit a moment to
@@ -172,9 +173,10 @@ final class SelfTest: NSObject, NSApplicationDelegate {
         let value = await js(web!, "return String(localStorage.getItem('xspace_persist'))")
         check(value == "ok", "localStorage survives a restart (value: \(value))")
 
+        let removal = DataStoreRemoval(store!)
         web = nil
         store = nil
-        check(await WebKitSupport.removeDataStore(Self.persistID), "Persistence test profile deleted")
+        await checkRemoval(removal, "Persistence test profile deleted")
         let remaining = await WKWebsiteDataStore.allDataStoreIdentifiers
         log("   Data stores owned by the app now: \(remaining.count)")
     }
@@ -208,6 +210,12 @@ final class SelfTest: NSObject, NSApplicationDelegate {
     private func check(_ ok: Bool, _ label: String) {
         log("\(ok ? "  PASS" : "  FAIL")  \(label)")
         if !ok { failures += 1 }
+    }
+
+    /// Deletes a test profile's data store once WebKit has released it, and checks the result.
+    private func checkRemoval(_ removal: DataStoreRemoval, _ label: String) async {
+        let failure = await removal.remove()
+        check(failure == nil, failure.map { "\(label) (\($0))" } ?? label)
     }
 
     private func log(_ text: String) {

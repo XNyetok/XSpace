@@ -36,21 +36,6 @@ enum WebKitSupport {
         _ = WKWebsiteDataStore.nonPersistent()
     }
 
-    /// Deletes a data store. WebKit refuses while the store is still in use, so this retries.
-    @MainActor
-    static func removeDataStore(_ id: UUID, attempts: Int = 6) async -> Bool {
-        for _ in 0..<attempts {
-            try? await Task.sleep(nanoseconds: 1_000_000_000)
-            do {
-                try await WKWebsiteDataStore.remove(forIdentifier: id)
-                return true
-            } catch {
-                continue
-            }
-        }
-        return false
-    }
-
     /// Asks WebKit to write the cookies of the given stores to disk now, waiting at most
     /// `timeout` seconds. A safeguard on quit, so a session created moments before quitting is
     /// on disk. (Note: older WebKit loads saved cookies lazily, on the first page that uses a
@@ -132,6 +117,46 @@ enum WebKitSupport {
         config.preferences.isElementFullscreenEnabled = true
         config.mediaTypesRequiringUserActionForPlayback = .all   // no autoplay: lighter
         return config
+    }
+}
+
+// MARK: - Deleting a data store
+
+/// Deletes a data store once WebKit has released it. WebKit refuses to delete a store that still
+/// exists, and after the store's last web view is gone it keeps the store for a while, until
+/// around the time the closed pages' processes exit: a fraction of a second on macOS 15 and 27,
+/// several seconds on macOS 26 (measured in CI). Waiting for the release itself replaces guessing
+/// a number of retries. Holds the store weakly: create this while the store is still referenced,
+/// drop every other reference to it, then call `remove()`.
+@MainActor
+final class DataStoreRemoval {
+    let id: UUID?
+    private weak var store: WKWebsiteDataStore?
+
+    init(_ store: WKWebsiteDataStore) {
+        id = store.identifier
+        self.store = store
+    }
+
+    /// First 8 characters of the identifier, for logs.
+    var shortID: String { id.map { String($0.uuidString.prefix(8)) } ?? "?" }
+
+    /// Waits until WebKit has released the store, then deletes it. Returns nil when the store was
+    /// deleted, otherwise the reason. `timeout` only keeps a store that is never released from
+    /// blocking the caller forever.
+    func remove(timeout: TimeInterval = 30) async -> String? {
+        guard let id else { return "the store has no identifier" }
+        let start = Date()
+        while store != nil, Date().timeIntervalSince(start) < timeout, !Task.isCancelled {
+            try? await Task.sleep(nanoseconds: 100_000_000)
+        }
+        let held = store == nil ? "" : "still in use after \(Int(Date().timeIntervalSince(start))) s; "
+        do {
+            try await WKWebsiteDataStore.remove(forIdentifier: id)
+            return nil
+        } catch {
+            return held + "WebKit: \(error.localizedDescription)"
+        }
     }
 }
 
