@@ -18,6 +18,9 @@ All notable changes to this project are documented here. The format follows
   network request.
 - **Beranda**, the house button in a pane's toolbar (⇧⌘H), shows the start page again; **Kembali**
   (⌘[) returns to the page.
+- **Atur Ulang Ukuran Pane** (⌃⌘0), in the **Tampilan** menu and at the bottom of the **Tata Letak**
+  menu, gives the panes of the current layout their default sizes again. The other layouts keep
+  their sizes.
 
 ### Changed
 - A new profile shows the start page instead of opening Google AI Studio.

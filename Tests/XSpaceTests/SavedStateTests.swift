@@ -203,6 +203,21 @@ final class SavedStateTests: XCTestCase {
         XCTAssertEqual(state.sizesKey, "automatic-3", "its sizes depend on the number of profiles")
     }
 
+    func testResettingTheSizesOfALayout() {
+        var state = state(profiles: 3)
+        state.switchLayout(to: .oneAndTwo, active: nil)
+        state.layoutSizes = ["oneAndTwo": [[0.7, 0.3], [0.5, 0.5]], "twoColumns": [[0.2, 0.8]], "automatic-3": [[1, 2, 3]]]
+        XCTAssertTrue(state.hasCustomSizes)
+        state.resetSizes()
+        XCTAssertFalse(state.hasCustomSizes)
+        XCTAssertEqual(state.layoutSizes, ["twoColumns": [[0.2, 0.8]], "automatic-3": [[1, 2, 3]]],
+                       "the other layouts keep their sizes")
+        state.switchLayout(to: .automatic, active: nil)
+        XCTAssertTrue(state.hasCustomSizes, "the automatic layout's sizes go with the number of profiles")
+        state.resetSizes()
+        XCTAssertEqual(state.layoutSizes, ["twoColumns": [[0.2, 0.8]]])
+    }
+
     func testSwitchingToAFixedLayoutTheFirstTime() {
         var state = state(profiles: 3)
         let (a, b, c) = (state.profiles[0].id, state.profiles[1].id, state.profiles[2].id)

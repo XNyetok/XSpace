@@ -54,6 +54,18 @@ final class GridTests: XCTestCase {
         XCTAssertNil(tree.node(at: [0, 0]), "a slot has no children")
     }
 
+    func testCustomSizes() {
+        let tree = GridPreset.oneAndThree.tree(slots: 0)   // two side by side, the second a column of three
+        XCTAssertEqual(tree.splitCounts, [2, 3], "the order of the saved sizes")
+        XCTAssertFalse(Grid.hasCustomSizes(nil, in: tree))
+        XCTAssertFalse(Grid.hasCustomSizes([[0.5, 0.5], [1, 1, 1]], in: tree), "equal sizes are the layout's own")
+        XCTAssertTrue(Grid.hasCustomSizes([[0.6, 0.4]], in: tree))
+        XCTAssertTrue(Grid.hasCustomSizes([[0.5, 0.5], [1, 1, 2]], in: tree), "a nested split counts too")
+        XCTAssertFalse(Grid.hasCustomSizes([[0.6, 0.3, 0.1], [1, -1, 2], [0.3, 0.7]], in: tree),
+                       "sizes that do not fit a split leave it equal, and there is no third split")
+        XCTAssertFalse(Grid.hasCustomSizes([[0.3, 0.7]], in: .slot(0)), "one pane has no sizes")
+    }
+
     func testFillingALayout() {
         let (a, b, c, d) = (UUID(), UUID(), UUID(), UUID())
         XCTAssertEqual(Grid.filling(4, shown: [c], profiles: [a, b, c], active: nil), [c, a, b, nil],

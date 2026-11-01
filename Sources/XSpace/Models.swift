@@ -183,6 +183,16 @@ struct AppStateData: Codable {
         layout == .automatic ? "\(layout.rawValue)-\(profiles.count)" : layout.rawValue
     }
 
+    /// Whether the panes of the current layout have other sizes than its own, which are equal.
+    var hasCustomSizes: Bool {
+        Grid.hasCustomSizes(layoutSizes[sizesKey], in: tree)
+    }
+
+    /// The panes of the current layout get its own sizes back; the other layouts keep theirs.
+    mutating func resetSizes() {
+        layoutSizes[sizesKey] = nil
+    }
+
     /// Fits the layouts to the profiles: unknown and repeated profiles leave their slot empty. A
     /// fixed layout without any profile is filled, and the single-profile layout shows the active
     /// profile, so the window shows something whenever there are profiles.

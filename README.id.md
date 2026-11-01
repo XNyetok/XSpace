@@ -93,7 +93,7 @@ notarisasi.
 | Kolom alamat pane aktif | ⌘L |
 | Muat ulang / kembali / maju | ⌘R / ⌘[ / ⌘] |
 | Zoom pane | ⌘= / ⌘- / ⌘0 |
-| Ubah ukuran pane | geser pembatas; klik dua kali = rata lagi |
+| Ubah ukuran pane | geser pembatas; klik dua kali = rata lagi; ⌃⌘0 (**Tampilan → Atur Ulang Ukuran Pane**, juga di bagian bawah menu **Tata Letak**) mengembalikan pane di tata letak itu ke ukuran bawaannya |
 | Pemakaian & pengaturan hemat RAM | indikator **RAM …**, atau menu **Tampilan → Hemat RAM** |
 
 Profil yang aktif adalah yang panenya sedang menerima ketikan; perintah profil berlaku untuknya.

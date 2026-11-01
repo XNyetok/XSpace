@@ -101,9 +101,32 @@ enum GridNode: Equatable {
         guard case .split(_, let children) = self, children.indices.contains(first) else { return nil }
         return children[first].node(at: Array(path.dropFirst()))
     }
+
+    /// The number of children of each split, depth first: the order of a layout's saved sizes.
+    var splitCounts: [Int] {
+        guard case .split(_, let children) = self else { return [] }
+        return [children.count] + children.flatMap(\.splitCounts)
+    }
 }
 
 enum Grid {
+    /// Whether saved ratios can size a split with `count` children: a positive ratio for each.
+    /// Others are ignored, and the split gets equal sizes.
+    static func ratios(_ ratios: [Double], fit count: Int) -> Bool {
+        ratios.count == count && ratios.allSatisfy { $0.isFinite && $0 > 0 }
+    }
+
+    /// Whether saved sizes (a split's ratios each, depth first) give the panes of `tree` other
+    /// sizes than the layout's own, which are equal.
+    static func hasCustomSizes(_ sizes: [[Double]]?, in tree: GridNode) -> Bool {
+        guard let sizes else { return false }
+        return zip(sizes, tree.splitCounts).contains { ratios, count in
+            guard Grid.ratios(ratios, fit: count) else { return false }
+            let sum = ratios.reduce(0, +)
+            return ratios.contains { abs($0 / sum - 1 / Double(count)) > 0.001 }
+        }
+    }
+
     /// The profiles a fixed layout with `count` slots shows when you switch to it for the first
     /// time: the profiles shown so far in their order, then the others in toolbar order. The
     /// active profile stays on screen: if it would not fit, it takes the last slot.

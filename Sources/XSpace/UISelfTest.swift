@@ -359,7 +359,14 @@ final class UISelfTest: NSObject, NSApplicationDelegate {
             grid.layoutSubtreeIfNeeded()
             check(abs(a.frame.width - 300) <= 1 && controller.testShown == [first, second],
                   "A layout keeps its profiles and its sizes (\(Int(a.frame.width)) pt)")
-            grid.splitView(at: [])?.equalize()
+            let reset = NSMenuItem(title: "", action: #selector(MainWindowController.resetPaneSizes(_:)), keyEquivalent: "")
+            let offered = controller.validateMenuItem(reset)
+            controller.resetPaneSizes(nil)
+            grid.layoutSubtreeIfNeeded()
+            check(offered && abs(a.frame.width - b.frame.width) <= 1 && !controller.validateMenuItem(reset)
+                  && StateStore.shared.data.layoutSizes["twoColumns"] == nil,
+                  "Atur Ulang Ukuran Pane gives the panes the layout's own sizes back "
+                  + "(\(Int(a.frame.width)) and \(Int(b.frame.width)) pt)")
         }
 
         controller.setLayout(.oneAndThree)
@@ -382,6 +389,17 @@ final class UISelfTest: NSObject, NSApplicationDelegate {
         check(Set(panes.map { ObjectIdentifier($0.profile.store) }).count == 4
               && panes.allSatisfy { $0.webView.configuration.websiteDataStore === $0.profile.store },
               "Every pane is its own profile, with its own data store")
+        if let column = grid.splitView(at: [1]) {
+            column.dragDivider(at: 0, to: 0)   // as small as it gets
+            column.dividerDragEnded()
+            grid.layoutSubtreeIfNeeded()
+            let dragged = panes[1].frame.height
+            controller.resetPaneSizes(nil)
+            grid.layoutSubtreeIfNeeded()
+            let heights = panes.dropFirst().map(\.frame.height)
+            check(dragged < heights[0] - 10 && (heights.max() ?? 0) - (heights.min() ?? 0) <= 1,
+                  "Atur Ulang Ukuran Pane: stacked panes too (\(Int(dragged)) pt, then \(heights.map { Int($0) }))")
+        }
 
         controller.window?.makeFirstResponder(panes[2].focusTarget)
         controller.createProfile(name: "Uji 5")   // every slot is taken: it takes the place of Uji 3

@@ -93,7 +93,7 @@ that. Developer ID signatures also get the secure timestamp that notarization re
 | Address bar of the focused pane | ⌘L |
 | Reload / back / forward | ⌘R / ⌘[ / ⌘] |
 | Zoom a pane | ⌘= / ⌘- / ⌘0 |
-| Resize panes | drag the divider; double-click it to equalize |
+| Resize panes | drag the divider; double-click it to equalize; ⌃⌘0 (**Tampilan → Atur Ulang Ukuran Pane**, also at the bottom of the **Tata Letak** menu) gives the panes of the layout their default sizes again |
 | Memory usage and saving | the **RAM …** indicator, or **Tampilan → Hemat RAM** |
 
 The profile you are in is the one whose pane has the keyboard focus; the commands for a profile

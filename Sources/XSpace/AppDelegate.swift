@@ -115,6 +115,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         viewMenu.addItem(layoutHolder)
         viewMenu.addItem(item("Tampilkan Satu Profil", #selector(MainWindowController.toggleSingleProfile(_:)), "g", [.command, .control], target: controller))
         viewMenu.addItem(item("Tukar Posisi Pane", #selector(MainWindowController.swapPanes(_:)), "x", [.command, .control], target: controller))
+        viewMenu.addItem(item("Atur Ulang Ukuran Pane", #selector(MainWindowController.resetPaneSizes(_:)), "0", [.command, .control], target: controller))
         viewMenu.addItem(.separator())
         let ramMenu = NSMenu(title: "Hemat RAM")
         ramMenu.addItem(item("Bekukan Profil Tersembunyi Sekarang", #selector(MainWindowController.hibernateHiddenNow(_:)), "", [], target: controller))

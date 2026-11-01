@@ -125,7 +125,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         window?.contentView = content
     }
 
-    /// The layouts, also in Tampilan → Tata Letak (see AppDelegate).
+    /// The layouts, also in Tampilan → Tata Letak (see AppDelegate), and resetting the sizes of the
+    /// panes (also in Tampilan).
     private func buildLayoutMenu() {
         for preset in GridPreset.allCases {
             let item = NSMenuItem(title: preset.title, action: #selector(chooseLayout(_:)), keyEquivalent: "")
@@ -134,6 +135,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
             item.representedObject = preset.rawValue
             layoutMenu.addItem(item)
         }
+        layoutMenu.addItem(.separator())
+        layoutMenu.addItem(menuItem("Atur Ulang Ukuran Pane", #selector(resetPaneSizes(_:))))
     }
 
     private func loadProfiles() {
@@ -397,6 +400,15 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
     /// Ctrl-Cmd-G: only the profile you are in, or back to the layout before.
     @objc func toggleSingleProfile(_ sender: Any?) {
         setLayout(state.data.layout == .single ? (state.data.previousLayout ?? .automatic) : .single)
+    }
+
+    /// Atur Ulang Ukuran Pane (Ctrl-Cmd-0): the panes of the current layout get its own sizes back,
+    /// as when it was chosen the first time. The other layouts keep their sizes.
+    @objc func resetPaneSizes(_ sender: Any?) {
+        guard state.data.hasCustomSizes else { return }
+        state.data.resetSizes()
+        state.scheduleSave()
+        applyLayout()
     }
 
     private func swapSlots(_ first: Int, _ second: Int) {
@@ -914,6 +926,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         case #selector(toggleSingleProfile(_:)):
             menuItem.state = state.data.layout == .single ? .on : .off
             return !profiles.isEmpty
+        case #selector(resetPaneSizes(_:)):
+            return !profiles.isEmpty && state.data.hasCustomSizes
         case #selector(renameProfile(_:)), #selector(cycleProfileColor(_:)), #selector(deleteProfile(_:)):
             return activeProfile != nil
         case #selector(setHibernatePolicy(_:)):

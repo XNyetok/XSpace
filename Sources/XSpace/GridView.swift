@@ -73,8 +73,7 @@ final class GridView: NSView {
         case .split(let axis, let children):
             let split = reusable[path] ?? makeSplit(at: path)
             split.axis = axis
-            if let sizes, splitIndex < sizes.count, sizes[splitIndex].count == children.count,
-               sizes[splitIndex].allSatisfy({ $0.isFinite && $0 > 0 }) {
+            if let sizes, splitIndex < sizes.count, Grid.ratios(sizes[splitIndex], fit: children.count) {
                 split.ratios = sizes[splitIndex].map { CGFloat($0) }
             } else {
                 split.ratios = []
