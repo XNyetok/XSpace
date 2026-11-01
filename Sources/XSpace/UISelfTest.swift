@@ -190,8 +190,20 @@ final class UISelfTest: NSObject, NSApplicationDelegate {
         controller.testSelect(first)
         if let workspace = controller.testWorkspace(first), workspace.panes.count == 2 {
             checkShowingInAnotherProfile(controller, workspace, first: (firstID, first), second: (secondID, second))
+            checkSplittingAndClosing(controller, workspace, second: (secondID, second))
         } else {
             check(false, "The first workspace has two panes")
+        }
+        let singleID = controller.testAddWorkspace(.pane(LayoutPane(id: UUID(), profileID: firstID, url: "about:blank")))
+        if let single = controller.testWorkspace(id: singleID), let pane = single.panes.first,
+           let paneID = single.paneID(of: pane) {
+            controller.window?.makeFirstResponder(pane.webView)
+            let closeItem = NSMenuItem(title: "Tutup Pane", action: #selector(MainWindowController.closePane(_:)), keyEquivalent: "")
+            check(!controller.validateMenuItem(closeItem)
+                  && controller.paneMenu(in: single, paneID: paneID)?.items.last?.isEnabled == false,
+                  "The only pane of a workspace cannot be closed")
+        } else {
+            check(false, "A workspace with one pane shows it")
         }
 
         log("\n[7] RAM indicator")
@@ -323,6 +335,55 @@ final class UISelfTest: NSObject, NSApplicationDelegate {
         controller.showPaneInProfile(item)   // Pane → Ganti Profil Pane acts on the pane you are in
         check(workspace.panes.count == 2 && workspace.panes[0] === left && workspace.panes[1].profile.id == first.id,
               "Pane → Ganti Profil Pane shows the pane you are in in the first profile again")
+    }
+
+    /// [6]: splitting and closing panes, from the Pane menu and from the pane's own menu.
+    /// `workspace` shows two panes of the first profile side by side.
+    private func checkSplittingAndClosing(_ controller: MainWindowController, _ workspace: WorkspaceView,
+                                          second: (id: UUID, name: String)) {
+        let (left, right) = (workspace.panes[0], workspace.panes[1])
+        workspace.layoutSubtreeIfNeeded()
+        let widthsBefore = [left.frame.width, right.frame.width]
+        controller.window?.makeFirstResponder(left.webView)
+        controller.splitPaneRight(nil)
+        workspace.layoutSubtreeIfNeeded()
+        var panes = workspace.panes
+        guard panes.count == 3 else { return check(false, "Bagi ke Kanan adds a pane (\(panes.count) panes)") }
+        let added = panes[1]
+        check(panes[0] === left && panes[2] === right && added.profile.id == left.profile.id
+              && workspace.urls[1] == workspace.urls[0]
+              && left.frame.maxX < added.frame.minX && added.frame.maxX < right.frame.minX
+              && controller.focusedPane === added,
+              "Bagi ke Kanan: a new pane right of it, same profile and page, with the focus; the others keep running")
+
+        guard let addedID = workspace.paneID(of: added),
+              let down = controller.paneMenu(in: workspace, paneID: addedID)?.items.first(where: { $0.title == "Bagi ke Bawah" })?.submenu,
+              let index = down.items.firstIndex(where: { $0.title == second.name }) else {
+            return check(false, "The pane's menu offers Bagi ke Bawah in the other profile")
+        }
+        down.performActionForItem(at: index)
+        workspace.layoutSubtreeIfNeeded()
+        panes = workspace.panes
+        guard panes.count == 4 else { return check(false, "Bagi ke Bawah adds a pane (\(panes.count) panes)") }
+        let below = panes[2]
+        check(panes[1] === added && panes[3] === right && below.profile.id == second.id
+              && added.superview === below.superview && added.frame.minY > below.frame.maxY,
+              "Bagi ke Bawah from the pane's menu: a pane below it, in the profile chosen")
+        let saved = StateStore.shared.data.workspaces.first { $0.id == workspace.id }?.root.panes.map(\.profileID)
+        check(saved == panes.map(\.profile.id), "The new layout is saved")
+
+        controller.window?.makeFirstResponder(below.webView)
+        controller.closePane(nil)
+        check(workspace.panes.count == 3 && controller.focusedPane === right,
+              "Tutup Pane closes the pane you are in, and the focus moves to the next pane")
+        controller.window?.makeFirstResponder(added.webView)
+        controller.closePane(nil)
+        workspace.layoutSubtreeIfNeeded()
+        let widthsAfter = [left.frame.width, right.frame.width]
+        check(workspace.panes.count == 2 && workspace.panes[0] === left && workspace.panes[1] === right
+              && zip(widthsBefore, widthsAfter).allSatisfy { abs($0 - $1) <= 1 },
+              "Closing the new panes gives the two panes their place and size back "
+              + "(\(widthsBefore.map { Int($0) }) → \(widthsAfter.map { Int($0) }) pt)")
     }
 
     /// state.json as saved, as JSON.

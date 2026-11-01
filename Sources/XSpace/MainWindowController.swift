@@ -605,7 +605,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
 
     // MARK: Pane commands
 
-    /// The menu that a pane's profile name opens: the profiles to show the pane in.
+    /// The menu that a pane's profile name opens: the profiles to show the pane in, splitting it
+    /// with a new pane in a profile of your choice, and closing it.
     func paneMenu(in workspace: WorkspaceView, paneID: UUID) -> NSMenu? {
         guard let pane = workspace.layout.pane(paneID) else { return nil }
         let menu = NSMenu()
@@ -621,7 +622,72 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
             item.state = profileID == pane.profileID ? .on : .off
             menu.addItem(item)
         }
+
+        menu.addItem(.separator())
+        for (title, axis) in [("Bagi ke Kanan", SplitAxis.horizontal), ("Bagi ke Bawah", SplitAxis.vertical)] {
+            let profilesMenu = NSMenu(title: title)
+            profilesMenu.autoenablesItems = false
+            profilesMenu.addItem(.sectionHeader(title: "Pane baru di profil"))
+            for profile in profiles {
+                let profileID = profile.id
+                let item = NSMenuItem(title: profile.name) { [weak self, weak workspace] in
+                    guard let self, let workspace else { return }
+                    self.performSplit(paneID, in: workspace, along: axis, profileID: profileID)
+                }
+                item.image = Palette.dot(profile.color, diameter: 10)
+                profilesMenu.addItem(item)
+            }
+            let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+            item.submenu = profilesMenu
+            item.isEnabled = workspace.canSplit(paneID, along: axis)
+            menu.addItem(item)
+        }
+
+        menu.addItem(.separator())
+        let close = NSMenuItem(title: "Tutup Pane") { [weak self, weak workspace] in
+            guard let self, let workspace else { return }
+            self.performClose(paneID, in: workspace)
+        }
+        close.isEnabled = workspace.canClose(paneID)
+        menu.addItem(close)
         return menu
+    }
+
+    /// Pane → Bagi ke Kanan: a new pane right of the pane you are in, same profile and page.
+    @objc func splitPaneRight(_ sender: Any?) {
+        splitTargetPane(along: .horizontal)
+    }
+
+    /// Pane → Bagi ke Bawah: a new pane below the pane you are in, same profile and page.
+    @objc func splitPaneDown(_ sender: Any?) {
+        splitTargetPane(along: .vertical)
+    }
+
+    private func splitTargetPane(along axis: SplitAxis) {
+        guard let pane = targetPane, let located = locate(pane) else { return }
+        performSplit(located.paneID, in: located.workspace, along: axis, profileID: nil)
+    }
+
+    private func performSplit(_ paneID: UUID, in workspace: WorkspaceView, along axis: SplitAxis, profileID: UUID?) {
+        guard workspace.canSplit(paneID, along: axis) else {
+            NSSound.beep()
+            return
+        }
+        let newPane = workspace.splitPane(paneID, along: axis, profileID: profileID)
+        paneCommandDidFinish(in: workspace, focus: newPane)
+    }
+
+    /// Pane → Tutup Pane: closes the pane you are in; the focus goes to the pane after it (or
+    /// before it, for the last one).
+    @objc func closePane(_ sender: Any?) {
+        guard let pane = targetPane, let located = locate(pane) else { return }
+        performClose(located.paneID, in: located.workspace)
+    }
+
+    private func performClose(_ paneID: UUID, in workspace: WorkspaceView) {
+        let order = workspace.layout.panes.map(\.id)
+        guard let index = order.firstIndex(of: paneID), workspace.closePane(paneID) else { return }
+        paneCommandDidFinish(in: workspace, focus: index + 1 < order.count ? order[index + 1] : order[index - 1])
     }
 
     /// Pane → Ganti Profil Pane: shows the pane you are in in the profile of the menu item.
@@ -757,6 +823,13 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         case #selector(showPaneInProfile(_:)):
             menuItem.state = (menuItem.representedObject as? UUID) == targetPane?.profile.id ? .on : .off
             return targetPane != nil
+        case #selector(splitPaneRight(_:)), #selector(splitPaneDown(_:)):
+            guard let pane = targetPane, let located = locate(pane) else { return false }
+            let axis: SplitAxis = menuItem.action == #selector(splitPaneRight(_:)) ? .horizontal : .vertical
+            return located.workspace.canSplit(located.paneID, along: axis)
+        case #selector(closePane(_:)):
+            guard let pane = targetPane, let located = locate(pane) else { return false }
+            return located.workspace.canClose(located.paneID)
         case #selector(reloadPane(_:)), #selector(backPane(_:)), #selector(forwardPane(_:)),
              #selector(openLocation(_:)), #selector(zoomInPane(_:)), #selector(zoomOutPane(_:)),
              #selector(actualSizePane(_:)):

@@ -154,6 +154,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func rebuildPaneMenu() {
         guard let controller else { return }
         paneMenu.removeAllItems()
+        // Control-Command, like Tukar Posisi Pane: web pages rarely use these shortcuts.
+        let rightArrow = "\u{F703}", downArrow = "\u{F701}"   // NSRightArrowFunctionKey, NSDownArrowFunctionKey
+        paneMenu.addItem(item("Bagi ke Kanan", #selector(MainWindowController.splitPaneRight(_:)), rightArrow, [.command, .control], target: controller))
+        paneMenu.addItem(item("Bagi ke Bawah", #selector(MainWindowController.splitPaneDown(_:)), downArrow, [.command, .control], target: controller))
+        paneMenu.addItem(item("Tutup Pane", #selector(MainWindowController.closePane(_:)), "w", [.command, .control], target: controller))
+        paneMenu.addItem(.separator())
         let profiles = NSMenu(title: "Ganti Profil Pane")
         for profile in controller.profiles {
             let entry = item(profile.name, #selector(MainWindowController.showPaneInProfile(_:)), "", [], target: controller)

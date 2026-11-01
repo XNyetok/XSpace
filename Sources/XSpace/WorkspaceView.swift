@@ -128,6 +128,44 @@ final class WorkspaceView: NSView {
         layoutDidChange()
     }
 
+    /// Splits the pane: a new pane next to it (to the right, or below for `.vertical`) shows the
+    /// same page in `profileID`, by default the pane's own profile. The two share the pane's
+    /// space, and the other panes keep running. Returns the new pane's ID.
+    @discardableResult
+    func splitPane(_ paneID: UUID, along axis: SplitAxis, profileID: UUID? = nil) -> UUID? {
+        let current = currentLayout()
+        guard let pane = current.pane(paneID) else { return nil }
+        let newPane = LayoutPane(id: UUID(), profileID: profileID ?? pane.profileID, url: pane.url)
+        layout = current.inserting(newPane, nextTo: paneID, along: axis)
+        layoutDidChange()
+        return newPane.id
+    }
+
+    /// Whether the pane has room for two panes along `axis`, each of at least the minimum size.
+    func canSplit(_ paneID: UUID, along axis: SplitAxis) -> Bool {
+        guard let view = paneViews[paneID] else { return false }
+        switch axis {
+        case .horizontal:
+            return view.frame.width >= 2 * PaneSplitView.minimumPaneWidth + PaneSplitView.dividerThickness
+        case .vertical:
+            return view.frame.height >= 2 * PaneSplitView.minimumPaneHeight + PaneSplitView.dividerThickness
+        }
+    }
+
+    /// Closes the pane: the pane before it takes its space (see LayoutNode.removingPane), and the
+    /// other panes keep running. The last pane of a workspace stays.
+    @discardableResult
+    func closePane(_ paneID: UUID) -> Bool {
+        guard canClose(paneID), let rest = currentLayout().removingPane(paneID) else { return false }
+        layout = rest
+        layoutDidChange()
+        return true
+    }
+
+    func canClose(_ paneID: UUID) -> Bool {
+        layout.pane(paneID) != nil && layout.panes.count > 1
+    }
+
     /// Updates the views to the changed layout (a frozen workspace stays frozen) and saves it.
     private func layoutDidChange() {
         if isAwake { reconcile() }

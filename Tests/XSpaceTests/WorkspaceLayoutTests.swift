@@ -200,6 +200,40 @@ final class WorkspaceLayoutTests: XCTestCase {
         XCTAssertEqual(only.inserting(new, nextTo: UUID(), along: .vertical), only, "no such pane: unchanged")
     }
 
+    func testAClosedPaneLeavesItsSpaceToThePaneBefore() {
+        let (a, b, c) = (pane(profileA), pane(profileA), pane(profileB))
+        guard case .split(let result)? = split(.horizontal, [a, b, c], ratios: [0.2, 0.3, 0.5]).removingPane(b.id) else {
+            return XCTFail("expected a split")
+        }
+        XCTAssertEqual(result.children, [a, c])
+        XCTAssertEqual(result.ratios, [0.5, 0.5])
+        guard case .split(let first)? = split(.horizontal, [a, b, c], ratios: [0.2, 0.3, 0.5]).removingPane(a.id) else {
+            return XCTFail("expected a split")
+        }
+        XCTAssertEqual(first.ratios, [0.5, 0.5], "the first pane leaves its space to the next one")
+    }
+
+    func testSplittingAPaneAndClosingTheNewOneGivesTheSizesBack() throws {
+        let (a, b) = (pane(profileA), pane(profileB))
+        let new = LayoutPane(id: UUID(), profileID: profileA, url: "https://new.example/")
+        let layout = split(.horizontal, [a, b])
+        let restored = try XCTUnwrap(layout.inserting(new, nextTo: a.id, along: .horizontal).removingPane(new.id))
+        guard case .split(let result) = restored else { return XCTFail("expected a split") }
+        XCTAssertEqual(result.children, [a, b])
+        XCTAssertEqual(result.ratios, [1, 1], "equal again")
+
+        let stacked = try XCTUnwrap(layout.inserting(new, nextTo: b.id, along: .vertical).removingPane(new.id))
+        XCTAssertEqual(stacked.panes.map(\.id), [a.id, b.id])
+        guard case .split(let unstacked) = stacked else { return XCTFail("expected a split") }
+        XCTAssertEqual(unstacked.children, [a, b], "the stack of one pane is that pane again")
+    }
+
+    func testClosingTheOnlyPaneLeavesNothing() {
+        let only = pane(profileA)
+        XCTAssertNil(only.removingPane(only.id))
+        XCTAssertEqual(only.removingPane(UUID()), only)
+    }
+
     func testRemovingPanesCollapsesSplitsAndKeepsShares() throws {
         let layout = mixedLayout()
         let withoutB = try XCTUnwrap(layout.removingPanes { $0.profileID == profileB })

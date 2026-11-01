@@ -182,6 +182,31 @@ extension LayoutNode {
         }
     }
 
+    /// The layout without the pane `id`, or nil if it was the only pane. Its space goes to the
+    /// node before it in its split (or after it, if it was the first), so splitting a pane and
+    /// closing the new one gives the pane its size back. A split left with one child is replaced
+    /// by that child.
+    func removingPane(_ id: UUID) -> LayoutNode? {
+        switch self {
+        case .pane(let pane):
+            return pane.id == id ? nil : self
+        case .split(var split):
+            guard let index = split.children.firstIndex(where: { $0.id == id }) else {
+                // A split always keeps at least one child, so no child disappears here.
+                split.children = split.children.compactMap { $0.removingPane(id) }
+                return .split(split)
+            }
+            let count = split.children.count
+            var shares = split.ratios.flatMap { $0.count == count ? $0 : nil } ?? Array(repeating: 1, count: count)
+            shares[index > 0 ? index - 1 : 1] += shares[index]
+            shares.remove(at: index)
+            split.children.remove(at: index)
+            guard split.children.count > 1 else { return split.children.first }
+            split.ratios = shares
+            return .split(split)
+        }
+    }
+
     /// The same layout without sizes that cannot be applied: a split's ratios must be one
     /// positive number per child, otherwise its children share the space equally.
     func withValidRatios() -> LayoutNode {

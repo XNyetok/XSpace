@@ -14,8 +14,8 @@ final class PaneView: NSView, WKNavigationDelegate, WKUIDelegate {
     var onURLChange: ((String) -> Void)?
     var onTitleChange: ((String) -> Void)?
     var onRequestClose: (() -> Void)?
-    /// Builds the menu that the profile name opens (show this pane in another profile). Set by
-    /// the pane's workspace; a popup has none, and there the name is only a label.
+    /// Builds the menu that the profile name opens (show this pane in another profile, split it,
+    /// close it). Set by the pane's workspace; a popup has none, and there the name is a label.
     var menuProvider: (() -> NSMenu?)? {
         didSet { refreshProfileAppearance() }
     }
@@ -194,7 +194,9 @@ final class PaneView: NSView, WKNavigationDelegate, WKUIDelegate {
             ]))
         }
         profileButton.attributedTitle = title
-        profileButton.toolTip = menuProvider == nil ? profile.name : "\(profile.name): tampilkan pane ini di profil lain"
+        profileButton.toolTip = menuProvider == nil
+            ? profile.name
+            : "\(profile.name): tampilkan pane ini di profil lain, bagi, atau tutup"
         profileButton.setAccessibilityLabel("Profil \(profile.name)")
     }
 
