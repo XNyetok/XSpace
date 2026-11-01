@@ -37,10 +37,10 @@ final class UISelfTest: NSObject, NSApplicationDelegate {
         await pause(5)
 
         log("\n[1] Policy: only on memory pressure")
-        check(rowHidden(controller, first) && paneCount(controller, first) == 2,
+        check(workspaceHidden(controller, first) && paneCount(controller, first) == 2,
               "Hidden profile stays alive until memory runs low")
 
-        if let pane = controller.testRow(first)?.panes.first {
+        if let pane = controller.testWorkspace(first)?.panes.first {
             // Kill the page process for real when allowed (unsandboxed builds). The App Sandbox
             // does not allow it, so there WebKit's termination callback is delivered directly.
             let pid = MemoryProbe.pid(of: pane.webView, "_webProcessIdentifier")
@@ -68,8 +68,8 @@ final class UISelfTest: NSObject, NSApplicationDelegate {
 
         controller.testSelect(first)
         await pause(6)
-        let restoredHost = controller.testRow(first)?.panes.first?.webView.url?.host ?? "-"
-        check(paneCount(controller, first) == 2 && !rowHidden(controller, first),
+        let restoredHost = controller.testWorkspace(first)?.panes.first?.webView.url?.host ?? "-"
+        check(paneCount(controller, first) == 2 && !workspaceHidden(controller, first),
               "A frozen profile comes back when opened")
         let offline = ProcessInfo.processInfo.environment["XSPACE_SELFTEST_OFFLINE"] == "1"
         if offline {
@@ -87,28 +87,28 @@ final class UISelfTest: NSObject, NSApplicationDelegate {
         controller.testSetPolicy(.after15Minutes)
         controller.testSelect(first)
         await pause(3)
-        controller.hibernateIdleProfiles(now: Date().addingTimeInterval(14 * 60))
+        controller.hibernateIdleWorkspaces(now: Date().addingTimeInterval(14 * 60))
         check(paneCount(controller, second) == 2, "Not frozen before 15 minutes")
-        controller.hibernateIdleProfiles(now: Date().addingTimeInterval(16 * 60))
+        controller.hibernateIdleWorkspaces(now: Date().addingTimeInterval(16 * 60))
         check(paneCount(controller, second) == 0, "Frozen after 15 minutes off screen")
 
         log("\n[4] Swapping panes")
-        if let row = controller.testRow(first), row.panes.count == 2 {
-            let (left, right) = (row.panes[0], row.panes[1])
-            let urlsBefore = row.urls
-            controller.swapPanes(nil)   // acts on the selected profile: `first`
-            row.layoutSubtreeIfNeeded()
-            check(row.panes[0] === right && row.panes[1] === left && right.frame.minX < left.frame.minX,
+        if let workspace = controller.testWorkspace(first), workspace.panes.count == 2 {
+            let (left, right) = (workspace.panes[0], workspace.panes[1])
+            let urlsBefore = workspace.urls
+            controller.swapPanes(nil)   // acts on the selected workspace: `first`
+            workspace.layoutSubtreeIfNeeded()
+            check(workspace.panes[0] === right && workspace.panes[1] === left && right.frame.minX < left.frame.minX,
                   "The two panes trade places (same web views, nothing recreated)")
-            let saved = StateStore.shared.data.profiles.first { $0.name == first }?.panes.map(\.url)
-            check(row.urls == Array(urlsBefore.reversed()) && saved == row.urls, "The new order is saved")
+            let saved = StateStore.shared.data.workspaces.first { $0.id == workspace.id }?.root.panes.map(\.url)
+            check(workspace.urls == Array(urlsBefore.reversed()) && saved == workspace.urls, "The new order is saved")
             controller.swapPanes(nil)
-            row.layoutSubtreeIfNeeded()
-            check(row.panes[0] === left && left.frame.minX < right.frame.minX, "Swapping again restores the order")
+            workspace.layoutSubtreeIfNeeded()
+            check(workspace.panes[0] === left && left.frame.minX < right.frame.minX, "Swapping again restores the order")
         } else {
             check(false, "Visible profile has two panes")
         }
-        if let frozen = controller.testRow(second), !frozen.isAwake {
+        if let frozen = controller.testWorkspace(second), !frozen.isAwake {
             let before = frozen.urls
             frozen.swapPanes(at: 0)
             check(frozen.urls == Array(before.reversed()) && !frozen.isAwake,
@@ -138,7 +138,7 @@ final class UISelfTest: NSObject, NSApplicationDelegate {
         let third = controller.createProfile(name: "Uji 3").id
         await pause(3)
         let watch = controller.profiles.first { $0.id == third }.map {
-            DeletionWatch(profile: $0, row: controller.testRow($0.name))
+            DeletionWatch(profile: $0, workspace: controller.testWorkspace($0.name))
         }
         let deleteStart = Date()
         await controller.testDelete(third)
@@ -171,11 +171,11 @@ final class UISelfTest: NSObject, NSApplicationDelegate {
     // MARK: Helpers
 
     private func paneCount(_ controller: MainWindowController, _ name: String) -> Int {
-        controller.testRow(name)?.panes.count ?? -1
+        controller.testWorkspace(name)?.panes.count ?? -1
     }
 
-    private func rowHidden(_ controller: MainWindowController, _ name: String) -> Bool {
-        controller.testRow(name)?.isHidden ?? false
+    private func workspaceHidden(_ controller: MainWindowController, _ name: String) -> Bool {
+        controller.testWorkspace(name)?.isHidden ?? false
     }
 
     private func pause(_ seconds: Double) async {
@@ -214,13 +214,13 @@ private final class DeletionWatch {
     private let store: WeakBox
     private let pids: [pid_t]
 
-    init(profile: Profile, row: ProfileRowView?) {
+    init(profile: Profile, workspace: WorkspaceView?) {
         removal = DataStoreRemoval(profile.store)
         store = WeakBox(profile.store)
         var objects: [(name: String, box: WeakBox)] = [("profile", WeakBox(profile))]
-        if let row { objects.append(("row", WeakBox(row))) }
+        if let workspace { objects.append(("workspace", WeakBox(workspace))) }
         var pids: [pid_t] = []
-        for (index, pane) in (row?.panes ?? []).enumerated() {
+        for (index, pane) in (workspace?.panes ?? []).enumerated() {
             objects.append(("pane \(index + 1)", WeakBox(pane)))
             objects.append(("web view \(index + 1)", WeakBox(pane.webView)))
             if let pid = MemoryProbe.pid(of: pane.webView, "_webProcessIdentifier"), !pids.contains(pid) {
@@ -231,7 +231,7 @@ private final class DeletionWatch {
         self.pids = pids
     }
 
-    /// XSpace no longer holds the profile, its row, its panes or their web views.
+    /// XSpace no longer holds the profile, its workspace, its panes or their web views.
     var xspaceReleased: Bool { xspaceObjects.allSatisfy { $0.box.object == nil } }
 
     var storeReleased: Bool { store.object == nil }

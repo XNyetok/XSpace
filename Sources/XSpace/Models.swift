@@ -12,9 +12,23 @@ struct ProfileState: Codable, Equatable {
     var id: UUID
     var name: String
     var colorIndex: Int
+    /// The profile's panes as 0.5.0 shows them. Since workspaces, the panes shown are in the
+    /// workspaces; these are only written for 0.5.0 (see AppStateData.encodedForDisk).
     var panes: [PaneState]
-    /// Relative pane widths (nil = equal widths).
+    /// Relative pane widths (nil = equal widths), like `panes`.
     var splitRatios: [Double]? = nil
+}
+
+extension ProfileState {
+    /// `panes` is only a copy for 0.5.0, so a profile without it can still be read.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        name = try c.decode(String.self, forKey: .name)
+        colorIndex = try c.decode(Int.self, forKey: .colorIndex)
+        panes = try c.decodeIfPresent([PaneState].self, forKey: .panes) ?? []
+        splitRatios = try c.decodeIfPresent([Double].self, forKey: .splitRatios)
+    }
 }
 
 /// When a profile that is not on screen gets frozen: its web views are destroyed so their
@@ -50,8 +64,17 @@ enum HibernatePolicy: String, Codable, CaseIterable {
 }
 
 struct AppStateData: Codable {
-    var version = 1
+    /// 2 added workspaces. A file without them (version 1, or a version 2 file saved again by
+    /// 0.5.0, which keeps the number but drops what it does not know) gets them when it is read.
+    static let currentVersion = 2
+
+    var version = AppStateData.currentVersion
+    /// One entry per profile, that is per data store.
     var profiles: [ProfileState] = []
+    /// What the window shows, in toolbar order.
+    var workspaces: [WorkspaceState] = []
+    var selectedWorkspaceID: UUID?
+    /// The profile 0.5.0 opens with; written for 0.5.0 (see encodedForDisk).
     var selectedProfileID: UUID?
     var showAll = false
     var hibernatePolicy: HibernatePolicy = .after15Minutes
@@ -62,11 +85,15 @@ struct AppStateData: Codable {
 
     private enum LegacyKeys: String, CodingKey { case autoHibernate }
 
-    /// Lenient decoding: missing keys (older versions) fall back to defaults.
+    /// Lenient decoding: missing keys (older versions) fall back to defaults, and the workspaces
+    /// are made to fit the profiles (see normalizeWorkspaces). Workspaces that cannot be read are
+    /// rebuilt from the profiles' panes, so the rest of the state is not lost with them.
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         version = try c.decodeIfPresent(Int.self, forKey: .version) ?? 1
         profiles = try c.decodeIfPresent([ProfileState].self, forKey: .profiles) ?? []
+        workspaces = (try? c.decodeIfPresent([WorkspaceState].self, forKey: .workspaces)) ?? []
+        selectedWorkspaceID = try? c.decodeIfPresent(UUID.self, forKey: .selectedWorkspaceID)
         selectedProfileID = try c.decodeIfPresent(UUID.self, forKey: .selectedProfileID)
         showAll = try c.decodeIfPresent(Bool.self, forKey: .showAll) ?? false
         pendingDeletion = try c.decodeIfPresent([UUID].self, forKey: .pendingDeletion) ?? []
@@ -82,6 +109,61 @@ struct AppStateData: Codable {
             }
             hibernatePolicy = legacyAuto ? .immediately : .after15Minutes
         }
+        normalizeWorkspaces()
+    }
+
+    /// Makes the workspaces fit the profiles (see WorkspaceState.normalized) and selects one:
+    /// the one saved, else the one showing the profile 0.5.0 had selected, else the first.
+    mutating func normalizeWorkspaces() {
+        workspaces = WorkspaceState.normalized(workspaces, profiles: profiles)
+        guard !workspaces.contains(where: { $0.id == selectedWorkspaceID }) else { return }
+        let showingSelectedProfile = selectedProfileID.flatMap { id in
+            workspaces.first { $0.root.contains(profile: id) }
+        }
+        selectedWorkspaceID = (showingSelectedProfile ?? workspaces.first)?.id
+    }
+
+    /// state.json as written to disk: the current format, plus each profile's panes and the
+    /// selected profile in the fields 0.5.0 reads, so going back to 0.5.0 keeps every profile.
+    func encodedForDisk() throws -> Data {
+        var written = self
+        written.version = Self.currentVersion
+        written.profiles = WorkspaceState.legacyProfiles(profiles, from: workspaces)
+        let selected = workspaces.first { $0.id == selectedWorkspaceID } ?? workspaces.first
+        if let profileID = selected?.root.panes.first?.profileID {
+            written.selectedProfileID = profileID
+        }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        return try encoder.encode(written)
+    }
+
+    /// Adds a profile with the default panes in a workspace of its own, and selects that workspace.
+    @discardableResult
+    mutating func addProfile(name: String, colorIndex: Int) -> (profile: ProfileState, workspace: WorkspaceState) {
+        let profile = ProfileState(id: UUID(), name: name, colorIndex: colorIndex,
+                                   panes: Defaults.paneURLs.map { PaneState(url: $0) })
+        let workspace = WorkspaceState(defaultFor: profile.id)
+        profiles.append(profile)
+        workspaces.append(workspace)
+        selectedWorkspaceID = workspace.id
+        return (profile, workspace)
+    }
+
+    /// Removes a profile and its panes from every workspace; a workspace left without panes is
+    /// removed too. The profile's data store is queued for deletion (see StateStore.removeDataStore).
+    mutating func removeProfile(_ id: UUID) {
+        profiles.removeAll { $0.id == id }
+        workspaces = workspaces.compactMap { workspace in
+            guard let root = workspace.root.removingPanes(where: { $0.profileID == id }) else { return nil }
+            var kept = workspace
+            kept.root = root
+            return kept
+        }
+        if !workspaces.contains(where: { $0.id == selectedWorkspaceID }) {
+            selectedWorkspaceID = workspaces.first?.id
+        }
+        pendingDeletion.append(id)
     }
 }
 
@@ -197,15 +279,19 @@ final class StateStore {
     func save() {
         saveTask?.cancel()
         saveTask = nil
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        guard let raw = try? encoder.encode(data) else { return }
+        guard let raw = try? data.encodedForDisk() else { return }
         try? raw.write(to: fileURL, options: .atomic)
     }
 
     func updateProfile(_ id: UUID, _ change: (inout ProfileState) -> Void) {
         guard let index = data.profiles.firstIndex(where: { $0.id == id }) else { return }
         change(&data.profiles[index])
+        scheduleSave()
+    }
+
+    func updateWorkspace(_ id: UUID, _ change: (inout WorkspaceState) -> Void) {
+        guard let index = data.workspaces.firstIndex(where: { $0.id == id }) else { return }
+        change(&data.workspaces[index])
         scheduleSave()
     }
 

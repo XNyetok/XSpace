@@ -1,38 +1,65 @@
 import AppKit
 import WebKit
 
-/// Main window: toolbar (profiles, add, options, RAM indicator, Focus/All mode) + profile rows.
+/// Main window: toolbar (workspaces, add profile, profile options, RAM indicator, Focus/All mode)
+/// and the workspaces. Every profile from 0.5.0 became a workspace with its panes, and a new
+/// profile gets one too, so for now the toolbar still reads as a list of profiles.
 @MainActor
 final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolbarDelegate,
                                   NSMenuItemValidation, NSMenuDelegate {
     private let state = StateStore.shared
     private(set) var profiles: [Profile] = []
-    private var rows: [UUID: ProfileRowView] = [:]
-    /// Since when each profile has been off screen; drives automatic freezing.
+    private var workspaceViews: [UUID: WorkspaceView] = [:]
+    /// Since when each workspace has been off screen; drives automatic freezing.
     private var hiddenSince: [UUID: Date] = [:]
-    private let rowsContainer = RowsContainerView()
-    private let profileSwitcher = NSSegmentedControl()
+    private let workspacesContainer = WorkspacesContainerView()
+    private let workspaceSwitcher = NSSegmentedControl()
     private let modeSwitcher = NSSegmentedControl(labels: ["Fokus", "Semua"], trackingMode: .selectOne, target: nil, action: nil)
     private let memoryMenu = NSMenu(title: "Memori")
     private var memoryItem: NSMenuToolbarItem?
     private let pressureWatcher = MemoryPressureWatcher()
     private var housekeepingTimer: Timer?
 
-    var onProfilesChanged: (() -> Void)?
+    var onWorkspacesChanged: (() -> Void)?
 
     private enum ToolbarID {
-        static let profiles = NSToolbarItem.Identifier("xspace.profiles")
+        static let workspaces = NSToolbarItem.Identifier("xspace.workspaces")
         static let add = NSToolbarItem.Identifier("xspace.add")
         static let more = NSToolbarItem.Identifier("xspace.more")
         static let memory = NSToolbarItem.Identifier("xspace.memory")
         static let mode = NSToolbarItem.Identifier("xspace.mode")
     }
 
+    /// The workspaces in toolbar order.
+    var workspaces: [WorkspaceState] { state.data.workspaces }
+
+    var selectedWorkspace: WorkspaceState? {
+        workspaces.first { $0.id == state.data.selectedWorkspaceID } ?? workspaces.first
+    }
+
+    /// The profile the profile commands act on: the one the selected workspace shows (for a
+    /// workspace with several profiles, the one in its first pane).
     var selectedProfile: Profile? {
-        if let id = state.data.selectedProfileID, let profile = profiles.first(where: { $0.id == id }) {
-            return profile
-        }
-        return profiles.first
+        selectedWorkspace?.root.panes.first.flatMap { profile($0.profileID) } ?? profiles.first
+    }
+
+    func profile(_ id: UUID) -> Profile? {
+        profiles.first { $0.id == id }
+    }
+
+    /// A workspace without a name of its own is named after the profiles of its panes.
+    func title(of workspace: WorkspaceState) -> String {
+        if let name = workspace.name, !name.isEmpty { return name }
+        var seen = Set<UUID>()
+        return workspace.root.panes
+            .filter { seen.insert($0.profileID).inserted }
+            .compactMap { profile($0.profileID)?.name }
+            .joined(separator: " + ")
+    }
+
+    /// The color of the profile in the workspace's first pane.
+    func color(of workspace: WorkspaceState) -> NSColor {
+        workspace.root.panes.first.flatMap { profile($0.profileID)?.color } ?? Palette.color(0)
     }
 
     init() {
@@ -50,7 +77,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
 
         buildToolbar()
         buildContent()
-        loadProfiles()
+        loadWorkspaces()
 
         if !window.setFrameUsingName("XSpaceMainWindow"), let screen = NSScreen.main {
             window.setFrame(screen.visibleFrame.insetBy(dx: 24, dy: 18), display: false)
@@ -73,105 +100,114 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
 
     private func buildContent() {
         let content = NSView()
-        rowsContainer.translatesAutoresizingMaskIntoConstraints = false
-        content.addSubview(rowsContainer)
+        workspacesContainer.translatesAutoresizingMaskIntoConstraints = false
+        content.addSubview(workspacesContainer)
         NSLayoutConstraint.activate([
-            rowsContainer.topAnchor.constraint(equalTo: content.topAnchor, constant: 6),
-            rowsContainer.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 6),
-            rowsContainer.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -6),
-            rowsContainer.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -6),
+            workspacesContainer.topAnchor.constraint(equalTo: content.topAnchor, constant: 6),
+            workspacesContainer.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 6),
+            workspacesContainer.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -6),
+            workspacesContainer.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -6),
         ])
         window?.contentView = content
     }
 
-    private func loadProfiles() {
+    private func loadWorkspaces() {
         if state.data.profiles.isEmpty {
-            let first = ProfileState(id: UUID(), name: "Akun 1", colorIndex: 0,
-                                     panes: Defaults.paneURLs.map { PaneState(url: $0) })
-            state.data.profiles = [first]
-            state.data.selectedProfileID = first.id
+            state.data.addProfile(name: "Akun 1", colorIndex: 0)
             state.save()
         }
-        for profileState in state.data.profiles {
-            attach(Profile(state: profileState), urls: profileState.panes.map(\.url), ratios: profileState.splitRatios)
-        }
-        if state.data.selectedProfileID == nil || !profiles.contains(where: { $0.id == state.data.selectedProfileID }) {
-            state.data.selectedProfileID = profiles.first?.id
+        profiles = state.data.profiles.map { Profile(state: $0) }
+        for workspace in workspaces {
+            attach(workspace)
         }
         modeSwitcher.selectedSegment = state.data.showAll ? 1 : 0
         rebuildSwitcher()
         applyVisibility()
     }
 
-    private func attach(_ profile: Profile, urls: [String], ratios: [Double]? = nil) {
-        profiles.append(profile)
-        let row = ProfileRowView(profile: profile, urls: urls, ratios: ratios)
-        let id = profile.id
-        row.onURLsChanged = { [weak self] urls in
-            self?.state.updateProfile(id) { $0.panes = urls.map { PaneState(url: $0) } }
+    private func attach(_ workspace: WorkspaceState) {
+        let view = WorkspaceView(id: workspace.id, layout: workspace.root) { [weak self] id in self?.profile(id) }
+        let id = workspace.id
+        view.onLayoutChanged = { [weak self] root in
+            self?.state.updateWorkspace(id) { $0.root = root }
         }
-        row.onRatiosChanged = { [weak self] ratios in
-            self?.state.updateProfile(id) { $0.splitRatios = ratios }
-        }
-        row.isHidden = true
-        rows[id] = row
-        rowsContainer.addRow(row)
+        view.isHidden = true
+        workspaceViews[id] = view
+        workspacesContainer.addWorkspace(view)
     }
 
-    /// Focus: only the selected profile is shown. All: every profile is stacked (grid).
-    /// Off-screen profiles are not rendered and are throttled by WebKit; when they get frozen
-    /// (web views destroyed) is decided by the HibernatePolicy.
-    private func applyVisibility() {
-        let selectedID = selectedProfile?.id
-        let now = Date()
-        for profile in profiles {
-            guard let row = rows[profile.id] else { continue }
-            let visible = state.data.showAll || profile.id == selectedID
-            row.isHidden = !visible
-            if visible {
-                hiddenSince[profile.id] = nil
-                row.wake()
+    /// Brings the workspace views in line with the saved workspaces after these changed: the
+    /// views of removed workspaces are destroyed, the others take over their new layout.
+    private func syncWorkspaceViews() {
+        let saved = Dictionary(uniqueKeysWithValues: workspaces.map { ($0.id, $0.root) })
+        for (id, view) in workspaceViews {
+            if let root = saved[id] {
+                if root != view.layout { view.update(layout: root) }
             } else {
-                if hiddenSince[profile.id] == nil { hiddenSince[profile.id] = now }
-                if state.data.hibernatePolicy == .immediately { row.hibernate() }
+                view.destroy()
+                workspacesContainer.removeWorkspace(view)
+                workspaceViews[id] = nil
+                hiddenSince[id] = nil
             }
         }
-        rowsContainer.needsLayout = true
-        window?.title = state.data.showAll ? "XSpace — Semua profil" : "XSpace — \(selectedProfile?.name ?? "")"
+    }
+
+    /// Focus: only the selected workspace is shown. All: every workspace is stacked (grid).
+    /// Off-screen workspaces are not rendered and are throttled by WebKit; when they get frozen
+    /// (web views destroyed) is decided by the HibernatePolicy.
+    private func applyVisibility() {
+        let selectedID = selectedWorkspace?.id
+        let now = Date()
+        for workspace in workspaces {
+            guard let view = workspaceViews[workspace.id] else { continue }
+            let visible = state.data.showAll || workspace.id == selectedID
+            view.isHidden = !visible
+            if visible {
+                hiddenSince[workspace.id] = nil
+                view.wake()
+            } else {
+                if hiddenSince[workspace.id] == nil { hiddenSince[workspace.id] = now }
+                if state.data.hibernatePolicy == .immediately { view.hibernate() }
+            }
+        }
+        workspacesContainer.needsLayout = true
+        let name = selectedWorkspace.map { title(of: $0) } ?? ""
+        window?.title = state.data.showAll ? "XSpace — Semua profil" : "XSpace — \(name)"
         refreshMemoryIndicator()
     }
 
     private func rebuildSwitcher() {
-        profileSwitcher.segmentCount = profiles.count
-        for (index, profile) in profiles.enumerated() {
-            profileSwitcher.setLabel(profile.name, forSegment: index)
-            profileSwitcher.setImage(Palette.dot(profile.color), forSegment: index)
-            profileSwitcher.setImageScaling(.scaleNone, forSegment: index)
-            profileSwitcher.setWidth(0, forSegment: index)
-            profileSwitcher.setToolTip(index < 9 ? "\(profile.name) (⌘\(index + 1))" : profile.name, forSegment: index)
+        let workspaces = self.workspaces
+        workspaceSwitcher.segmentCount = workspaces.count
+        for (index, workspace) in workspaces.enumerated() {
+            let name = title(of: workspace)
+            workspaceSwitcher.setLabel(name, forSegment: index)
+            workspaceSwitcher.setImage(Palette.dot(color(of: workspace)), forSegment: index)
+            workspaceSwitcher.setImageScaling(.scaleNone, forSegment: index)
+            workspaceSwitcher.setWidth(0, forSegment: index)
+            workspaceSwitcher.setToolTip(index < 9 ? "\(name) (⌘\(index + 1))" : name, forSegment: index)
         }
-        if let selected = selectedProfile, let index = profiles.firstIndex(where: { $0.id == selected.id }) {
-            profileSwitcher.selectedSegment = index
+        if let selected = selectedWorkspace, let index = workspaces.firstIndex(where: { $0.id == selected.id }) {
+            workspaceSwitcher.selectedSegment = index
         }
-        profileSwitcher.sizeToFit()
-        profileSwitcher.invalidateIntrinsicContentSize()
-        onProfilesChanged?()
+        workspaceSwitcher.sizeToFit()
+        workspaceSwitcher.invalidateIntrinsicContentSize()
+        onWorkspacesChanged?()
     }
 
-    func select(_ profile: Profile) {
-        state.data.selectedProfileID = profile.id
+    func select(_ workspace: WorkspaceState) {
+        state.data.selectedWorkspaceID = workspace.id
         state.scheduleSave()
-        if let index = profiles.firstIndex(where: { $0.id == profile.id }) {
-            profileSwitcher.selectedSegment = index
+        if let index = workspaces.firstIndex(where: { $0.id == workspace.id }) {
+            workspaceSwitcher.selectedSegment = index
         }
         applyVisibility()
     }
 
     func persistAll() {
-        for profile in profiles {
-            guard let row = rows[profile.id] else { continue }
-            let urls = row.currentURLs()
-            state.updateProfile(profile.id) { $0.panes = urls.map { PaneState(url: $0) } }
+        for (id, view) in workspaceViews {
+            let root = view.currentLayout()
+            state.updateWorkspace(id) { $0.root = root }
         }
         state.save()
     }
@@ -184,7 +220,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         }
         let timer = Timer(timeInterval: 5, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
-                self?.hibernateIdleProfiles()
+                self?.hibernateIdleWorkspaces()
                 self?.refreshMemoryIndicator()
             }
         }
@@ -194,21 +230,21 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         refreshMemoryIndicator()
     }
 
-    /// Freezes profiles that have been hidden for longer than the policy allows.
-    func hibernateIdleProfiles(now: Date = Date()) {
+    /// Freezes workspaces that have been hidden for longer than the policy allows.
+    func hibernateIdleWorkspaces(now: Date = Date()) {
         guard let limit = state.data.hibernatePolicy.idleSeconds else { return }
         for (id, since) in hiddenSince where now.timeIntervalSince(since) >= limit {
-            guard let row = rows[id], row.isHidden, row.isAwake else { continue }
-            row.hibernate()
+            guard let view = workspaceViews[id], view.isHidden, view.isAwake else { continue }
+            view.hibernate()
         }
     }
 
-    /// macOS reports memory pressure → freeze every profile that is not on screen.
+    /// macOS reports memory pressure → freeze every workspace that is not on screen.
     func handleMemoryPressure(_ event: DispatchSource.MemoryPressureEvent) {
         guard state.data.hibernatePolicy.respondsToMemoryPressure else { return }
         let frozen = hibernateAllHidden()
         if frozen > 0 {
-            NSLog("XSpace: memory pressure (%@) → froze %d hidden profile(s)",
+            NSLog("XSpace: memory pressure (%@) → froze %d hidden workspace(s)",
                   event.contains(.critical) ? "critical" : "warning", frozen)
         }
     }
@@ -216,8 +252,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
     @discardableResult
     private func hibernateAllHidden() -> Int {
         var count = 0
-        for row in rows.values where row.isHidden && row.isAwake {
-            row.hibernate()
+        for view in workspaceViews.values where view.isHidden && view.isAwake {
+            view.hibernate()
             count += 1
         }
         refreshMemoryIndicator()
@@ -233,9 +269,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         state.data.hibernatePolicy = policy
         state.scheduleSave()
         applyVisibility()
-        hibernateIdleProfiles()
+        hibernateIdleWorkspaces()
     }
 
+    /// Memory per profile, over the panes it has in every workspace and its popups.
     func memoryReport() -> MemoryReport {
         var report = MemoryReport()
         var seen = Set<pid_t>()
@@ -247,16 +284,23 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         }
         report.app = measure(getpid())
         var anyWebView: WKWebView?
+        let views = Array(workspaceViews.values)
         for profile in profiles {
-            guard let row = rows[profile.id] else { continue }
-            let webViews = row.panes.map(\.webView) + PopupWindowController.webViews(for: profile.id)
+            var panes: [PaneView] = []
+            var onScreen = false
+            for view in views {
+                let own = view.panes.filter { $0.profile.id == profile.id }
+                panes += own
+                if !own.isEmpty && !view.isHidden { onScreen = true }
+            }
+            let webViews = panes.map(\.webView) + PopupWindowController.webViews(for: profile.id)
             var bytes: UInt64 = 0
             for webView in webViews {
                 if anyWebView == nil { anyWebView = webView }
                 bytes += measure(MemoryProbe.pid(of: webView, "_webProcessIdentifier"))
             }
             report.profiles.append(.init(name: profile.name, color: profile.color, bytes: bytes,
-                                         panes: row.panes.count, hidden: row.isHidden))
+                                         panes: panes.count, hidden: !onScreen))
             report.network += measure(MemoryProbe.pid(of: profile.store, "_networkProcessIdentifier"))
         }
         if let pool = anyWebView?.configuration.value(forKey: "processPool") as? NSObject {
@@ -303,7 +347,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         menu.addItem(.separator())
         let freeze = NSMenuItem(title: "Bekukan Profil Tersembunyi Sekarang", action: #selector(hibernateHiddenNow(_:)), keyEquivalent: "")
         freeze.target = self
-        freeze.isEnabled = rows.values.contains { $0.isHidden && $0.isAwake }
+        freeze.isEnabled = workspaceViews.values.contains { $0.isHidden && $0.isAwake }
         menu.addItem(freeze)
 
         menu.addItem(.separator())
@@ -331,12 +375,12 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
 
         print("Window: \(Int(window.frame.width))×\(Int(window.frame.height)), mode: \(state.data.showAll ? "All" : "Focus")")
         var shots: [(NSImage, NSRect)] = []
-        for profile in profiles {
-            guard let row = rows[profile.id] else { continue }
-            print("Profile “\(profile.name)”: \(row.isHidden ? "hidden" : "visible"), live panes: \(row.panes.count)")
-            for pane in row.panes where !row.isHidden {
+        for workspace in workspaces {
+            guard let view = workspaceViews[workspace.id] else { continue }
+            print("Workspace “\(title(of: workspace))”: \(view.isHidden ? "hidden" : "visible"), live panes: \(view.panes.count)")
+            for pane in view.panes where !view.isHidden {
                 let rect = pane.webView.convert(pane.webView.bounds, to: frameView)
-                print("  pane \(Int(rect.width))×\(Int(rect.height)) — \(pane.webView.url?.absoluteString ?? "-")")
+                print("  pane (\(pane.profile.name)) \(Int(rect.width))×\(Int(rect.height)) — \(pane.webView.url?.absoluteString ?? "-")")
                 if let image = try? await pane.webView.takeSnapshot(configuration: nil) {
                     shots.append((image, rect))
                 }
@@ -376,7 +420,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
 
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
         // The space keeps the RAM indicator from touching the Focus/All switch.
-        [ToolbarID.profiles, ToolbarID.add, ToolbarID.more, .flexibleSpace, ToolbarID.memory, .space, ToolbarID.mode]
+        [ToolbarID.workspaces, ToolbarID.add, ToolbarID.more, .flexibleSpace, ToolbarID.memory, .space, ToolbarID.mode]
     }
 
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
@@ -387,12 +431,12 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
                  itemForItemIdentifier itemIdentifier: NSToolbarItem.Identifier,
                  willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {
         switch itemIdentifier {
-        case ToolbarID.profiles:
+        case ToolbarID.workspaces:
             let item = NSToolbarItem(itemIdentifier: itemIdentifier)
-            profileSwitcher.trackingMode = .selectOne
-            profileSwitcher.target = self
-            profileSwitcher.action = #selector(profileSwitcherChanged(_:))
-            item.view = profileSwitcher
+            workspaceSwitcher.trackingMode = .selectOne
+            workspaceSwitcher.target = self
+            workspaceSwitcher.action = #selector(workspaceSwitcherChanged(_:))
+            item.view = workspaceSwitcher
             item.label = "Profil"
             return item
         case ToolbarID.add:
@@ -450,16 +494,16 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         return item
     }
 
-    // MARK: Profile actions
+    // MARK: Workspace and profile actions
 
-    @objc func profileSwitcherChanged(_ sender: NSSegmentedControl) {
-        guard profiles.indices.contains(sender.selectedSegment) else { return }
-        select(profiles[sender.selectedSegment])
+    @objc func workspaceSwitcherChanged(_ sender: NSSegmentedControl) {
+        guard workspaces.indices.contains(sender.selectedSegment) else { return }
+        select(workspaces[sender.selectedSegment])
     }
 
-    @objc func selectProfileFromMenu(_ sender: NSMenuItem) {
-        guard profiles.indices.contains(sender.tag) else { return }
-        select(profiles[sender.tag])
+    @objc func selectWorkspaceFromMenu(_ sender: NSMenuItem) {
+        guard workspaces.indices.contains(sender.tag) else { return }
+        select(workspaces[sender.tag])
     }
 
     @objc func modeChanged(_ sender: NSSegmentedControl) {
@@ -487,16 +531,15 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         }
     }
 
+    /// Adds a profile with the default panes in a workspace of its own, and shows it.
     @discardableResult
     func createProfile(name: String) -> Profile {
         let usedColors = Set(profiles.map(\.colorIndex))
         let color = (0..<Palette.colors.count).first { !usedColors.contains($0) } ?? profiles.count
-        let profileState = ProfileState(id: UUID(), name: name, colorIndex: color,
-                                        panes: Defaults.paneURLs.map { PaneState(url: $0) })
-        state.data.profiles.append(profileState)
-        let profile = Profile(state: profileState)
-        attach(profile, urls: profileState.panes.map(\.url))
-        state.data.selectedProfileID = profileState.id
+        let added = state.data.addProfile(name: name, colorIndex: color)
+        let profile = Profile(state: added.profile)
+        profiles.append(profile)
+        attach(added.workspace)
         state.save()
         rebuildSwitcher()
         applyVisibility()
@@ -510,7 +553,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
             guard let self, let name else { return }
             profile.name = name
             self.state.updateProfile(profile.id) { $0.name = name }
-            self.rows[profile.id]?.refreshAppearance()
+            self.workspaceViews.values.forEach { $0.refreshAppearance() }
             PopupWindowController.refreshAppearance(for: profile.id)
             self.rebuildSwitcher()
             self.applyVisibility()
@@ -522,20 +565,20 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         profile.colorIndex = (profile.colorIndex + 1) % Palette.colors.count
         let colorIndex = profile.colorIndex
         state.updateProfile(profile.id) { $0.colorIndex = colorIndex }
-        rows[profile.id]?.refreshAppearance()
+        workspaceViews.values.forEach { $0.refreshAppearance() }
         PopupWindowController.refreshAppearance(for: profile.id)
         rebuildSwitcher()
     }
 
-    /// Swaps the two panes of the selected profile (the first two, should it have more).
+    /// Swaps the first two panes of the selected workspace.
     @objc func swapPanes(_ sender: Any?) {
-        guard let profile = selectedProfile else { return }
-        rows[profile.id]?.swapPanes(at: 0)
+        guard let workspace = selectedWorkspace else { return }
+        workspaceViews[workspace.id]?.swapPanes(at: 0)
     }
 
     @objc func resetPanes(_ sender: Any?) {
-        guard let profile = selectedProfile else { return }
-        rows[profile.id]?.resetToDefaults()
+        guard let workspace = selectedWorkspace, let profile = selectedProfile else { return }
+        workspaceViews[workspace.id]?.resetToDefaults(profileID: profile.id)
     }
 
     @objc func deleteProfile(_ sender: Any?) {
@@ -566,19 +609,13 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
     @discardableResult
     private func performDelete(_ id: UUID) -> Task<Void, Never>? {
         // Watch the data store before the last references to it go away (see DataStoreRemoval).
-        let removal = profiles.first { $0.id == id }.map { DataStoreRemoval($0.store) }
+        let removal = profile(id).map { DataStoreRemoval($0.store) }
         PopupWindowController.closeAll(for: id)
-        if let row = rows.removeValue(forKey: id) {
-            row.destroy()
-            rowsContainer.removeRow(row)
-        }
-        hiddenSince[id] = nil
+        state.data.removeProfile(id)
+        // Its panes go from every workspace: WebKit releases a data store only after all of its
+        // web views are gone.
+        syncWorkspaceViews()
         profiles.removeAll { $0.id == id }
-        state.data.profiles.removeAll { $0.id == id }
-        if state.data.selectedProfileID == id {
-            state.data.selectedProfileID = profiles.first?.id
-        }
-        state.data.pendingDeletion.append(id)
         state.save()
         rebuildSwitcher()
         applyVisibility()
@@ -608,8 +645,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
     // MARK: Pane actions (fallback when keyboard focus is not inside a pane)
 
     private var defaultPane: PaneView? {
-        guard let profile = selectedProfile else { return nil }
-        return rows[profile.id]?.panes.first
+        guard let workspace = selectedWorkspace else { return nil }
+        return workspaceViews[workspace.id]?.panes.first
     }
 
     @objc func reloadPane(_ sender: Any?) { defaultPane?.reloadPane(sender) }
@@ -627,14 +664,15 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         case #selector(setHibernatePolicy(_:)):
             menuItem.state = (menuItem.representedObject as? String) == state.data.hibernatePolicy.rawValue ? .on : .off
         case #selector(hibernateHiddenNow(_:)):
-            return rows.values.contains { $0.isHidden && $0.isAwake }
-        case #selector(selectProfileFromMenu(_:)):
-            let isSelected = profiles.indices.contains(menuItem.tag) && profiles[menuItem.tag].id == selectedProfile?.id
+            return workspaceViews.values.contains { $0.isHidden && $0.isAwake }
+        case #selector(selectWorkspaceFromMenu(_:)):
+            let isSelected = workspaces.indices.contains(menuItem.tag) && workspaces[menuItem.tag].id == selectedWorkspace?.id
             menuItem.state = isSelected ? .on : .off
         case #selector(deleteProfile(_:)):
             return profiles.count > 1
         case #selector(swapPanes(_:)):
-            return (selectedProfile.flatMap { rows[$0.id] }?.urls.count ?? 0) > 1
+            if case .split(let split)? = selectedWorkspace?.root { return split.children.count > 1 }
+            return false
         case #selector(reloadPane(_:)), #selector(backPane(_:)), #selector(forwardPane(_:)),
              #selector(openLocation(_:)), #selector(zoomInPane(_:)), #selector(zoomOutPane(_:)),
              #selector(actualSizePane(_:)):
@@ -647,12 +685,12 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
 
     // MARK: Hooks for the automated UI test (--selftest-ui)
 
-    func testRow(_ name: String) -> ProfileRowView? {
-        profiles.first { $0.name == name }.flatMap { rows[$0.id] }
+    func testWorkspace(_ title: String) -> WorkspaceView? {
+        workspaces.first { self.title(of: $0) == title }.flatMap { workspaceViews[$0.id] }
     }
 
-    func testSelect(_ name: String) {
-        if let profile = profiles.first(where: { $0.name == name }) { select(profile) }
+    func testSelect(_ title: String) {
+        if let workspace = workspaces.first(where: { self.title(of: $0) == title }) { select(workspace) }
     }
 
     func testSetPolicy(_ policy: HibernatePolicy) {
@@ -666,19 +704,22 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         await performDelete(id)?.value
     }
 
-    /// Destroys every profile without dialogs. The UI self-test then deletes their data stores.
+    /// Destroys every workspace and profile without dialogs. The UI self-test then deletes the
+    /// profiles' data stores.
     func testDestroyAll() {
         for id in profiles.map(\.id) {
             PopupWindowController.closeAll(for: id)
-            if let row = rows.removeValue(forKey: id) {
-                row.destroy()
-                rowsContainer.removeRow(row)
-            }
         }
+        for view in workspaceViews.values {
+            view.destroy()
+            workspacesContainer.removeWorkspace(view)
+        }
+        workspaceViews.removeAll()
         profiles.removeAll()
         hiddenSince.removeAll()
         housekeepingTimer?.invalidate()
         state.data.profiles.removeAll()
+        state.data.workspaces.removeAll()
         state.save()
     }
 }

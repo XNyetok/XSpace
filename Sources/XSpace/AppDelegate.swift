@@ -11,7 +11,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self else { return }
             await StateStore.shared.purgePendingDeletions()
             let controller = MainWindowController()
-            controller.onProfilesChanged = { [weak self] in self?.rebuildProfilesMenu() }
+            controller.onWorkspacesChanged = { [weak self] in self?.rebuildProfilesMenu() }
             self.controller = controller
             self.installMainMenu()
             controller.showWindow(nil)
@@ -153,11 +153,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         profilesMenu.addItem(item("Atur Ulang Pane ke Default", #selector(MainWindowController.resetPanes(_:)), "", [], target: controller))
         profilesMenu.addItem(item("Hapus Profil…", #selector(MainWindowController.deleteProfile(_:)), "", [], target: controller))
         profilesMenu.addItem(.separator())
-        for (index, profile) in controller.profiles.enumerated() {
-            let entry = item(profile.name, #selector(MainWindowController.selectProfileFromMenu(_:)),
+        // The workspaces, like the switcher in the toolbar (⌘1–⌘9).
+        for (index, workspace) in controller.workspaces.enumerated() {
+            let entry = item(controller.title(of: workspace), #selector(MainWindowController.selectWorkspaceFromMenu(_:)),
                              index < 9 ? "\(index + 1)" : "", [.command], target: controller)
             entry.tag = index
-            entry.image = Palette.dot(profile.color, diameter: 10)
+            entry.image = Palette.dot(controller.color(of: workspace), diameter: 10)
             profilesMenu.addItem(entry)
         }
     }
