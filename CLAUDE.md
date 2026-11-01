@@ -52,7 +52,8 @@ $APP --selftest-ui                               # opens a window for about 20 s
 
 - User-visible changes go into `CHANGELOG.md` under "Unreleased" (Keep a Changelog).
 - One topic per commit; imperative subject line, and a body that explains why.
-- Commit with the GitHub noreply address, never a personal email (`git config user.email`).
+- Commit with the address from `git config --local user.email` (chosen for this project). If
+  it is unset, ask instead of falling back to the global address.
 - Work on a branch and open a pull request. When CI is green, merge by fast-forwarding main
   (`git push origin <branch>:main`; GitHub then marks the PR as merged). Don't use GitHub's
   merge buttons: they create or rewrite commits with the merging account's email.
