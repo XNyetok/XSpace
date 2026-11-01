@@ -66,6 +66,11 @@ final class PaneView: NSView, WKNavigationDelegate, WKUIDelegate {
     }
 
     func tearDown() {
+        // A web view that still has the keyboard focus can outlive the pane, and keep its data
+        // store in use: the focus goes first.
+        if let window, let responder = window.firstResponder as? NSView, responder.isDescendant(of: self) {
+            window.makeFirstResponder(nil)
+        }
         observations.forEach { $0.invalidate() }
         observations.removeAll()
         webView.stopLoading()

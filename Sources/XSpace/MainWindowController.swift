@@ -88,7 +88,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
     }
 
     init() {
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1400, height: 900),
+        let window = MainWindow(contentRect: NSRect(x: 0, y: 0, width: 1400, height: 900),
                               styleMask: [.titled, .closable, .miniaturizable, .resizable],
                               backing: .buffered, defer: false)
         window.title = "XSpace"
@@ -191,6 +191,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
     private func applyVisibility() {
         let selectedID = selectedWorkspace?.id
         let now = Date()
+        let paneHadFocus = focusedPane != nil
         for workspace in workspaces {
             guard let view = workspaceViews[workspace.id] else { continue }
             let visible = state.data.showAll || workspace.id == selectedID
@@ -204,6 +205,12 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
             }
         }
         workspacesContainer.needsLayout = true
+        // A pane that had the keyboard focus and is hidden now loses it to the window (or keeps
+        // it, if AppKit did not take it): the focus goes to the selected workspace's first pane.
+        let responderHidden = (window?.firstResponder as? NSView)?.isHiddenOrHasHiddenAncestor == true
+        if responderHidden || (paneHadFocus && focusedPane == nil) {
+            window?.makeFirstResponder(defaultPane?.webView)
+        }
         let name = selectedWorkspace.map { title(of: $0) } ?? ""
         window?.title = state.data.showAll ? "XSpace — Semua profil" : "XSpace — \(name)"
         refreshMemoryIndicator()
@@ -906,6 +913,16 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         state.data.profiles.removeAll()
         state.data.workspaces.removeAll()
         state.save()
+    }
+}
+
+/// The main window. A view that is not on screen cannot take the keyboard focus: hiding a workspace
+/// does not stop WebKit from focusing one of its pages (a page that loads in the background can
+/// focus a field), and keys typed then would go to a page you cannot see.
+private final class MainWindow: NSWindow {
+    override func makeFirstResponder(_ responder: NSResponder?) -> Bool {
+        if let view = responder as? NSView, view.isHiddenOrHasHiddenAncestor { return false }
+        return super.makeFirstResponder(responder)
     }
 }
 

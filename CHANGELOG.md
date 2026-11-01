@@ -23,6 +23,9 @@ All notable changes to this project are documented here. The format follows
   with **Atur Ulang Pane ke Default**.
 
 ### Fixed
+- A page that is not on screen could take the keyboard focus, for example a sign-in page loading
+  in the background that focuses its email field, so typed text went to a page you could not see.
+  Now only pages on screen get the focus, and after switching, the first pane shown has it.
 - If XSpace cannot read its saved state (`state.json`), for example because the file is damaged,
   it now moves the file aside as `state-unreadable-<date>.json` before starting over. Before, it
   overwrote the file, and the profiles in it could no longer be opened.

@@ -175,7 +175,11 @@ final class UISelfTest: NSObject, NSApplicationDelegate {
             mixed.layoutSubtreeIfNeeded()
             let layoutBefore = mixed.currentLayout()
             controller.testSelect(first)
-            check(controller.focusedPane == nil, "A pane that is no longer on screen is not the pane you are in")
+            let shownPane = controller.testWorkspace(first)?.panes.first
+            check(controller.focusedPane != nil && controller.focusedPane === shownPane,
+                  "The keyboard focus leaves a workspace that is hidden, for the first pane of the one shown")
+            check(controller.window?.makeFirstResponder(top.webView) == false && controller.focusedPane === shownPane,
+                  "A page that is not on screen cannot take the keyboard focus")
             controller.hibernateHiddenNow(nil)
             check(!mixed.isAwake && mixed.panes.isEmpty, "A hidden workspace is frozen as a whole")
             controller.testSelectWorkspace(id: mixedID)
@@ -238,6 +242,10 @@ final class UISelfTest: NSObject, NSApplicationDelegate {
             DeletionWatch(profile: $0, workspace: controller.testWorkspace($0.name), panes: controller.testPanes(of: $0.id))
         }
         log("   watching \(watch?.paneCount ?? 0) pane(s) in 2 workspaces")
+        // Showing the shared workspace hid the profile's own one. A web view of it that kept the
+        // keyboard focus could stay alive after the deletion (seen in about 1 of 5 runs).
+        check((controller.window?.firstResponder as? NSView)?.isHiddenOrHasHiddenAncestor != true,
+              "No page that is not on screen has the keyboard focus")
         let deleteStart = Date()
         await controller.testDelete(third)
         let seconds = String(format: "%.1f", Date().timeIntervalSince(deleteStart))
