@@ -40,8 +40,9 @@ swift test                                       # unit tests
 XSPACE_WARNINGS_AS_ERRORS=1 ./scripts/build.sh   # build, failing on compiler warnings like CI
 APP=build/XSpace.app/Contents/MacOS/XSpace
 $APP --selftest && $APP --selftest-persist       # isolation, User-Agent, persistence
-$APP --selftest-ui                               # freezing, swapping panes, deleting a profile,
-                                                 # RAM indicator (opens a window briefly)
+$APP --selftest-ui                               # upgrading from 0.5.0, freezing, swapping panes,
+                                                 # workspaces, deleting a profile, RAM indicator
+                                                 # (opens a window briefly)
 ```
 
 The self-tests use throwaway profiles and never touch your own. CI runs all of the above on

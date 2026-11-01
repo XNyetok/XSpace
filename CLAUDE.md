@@ -36,7 +36,7 @@ swift test                                       # unit tests
 XSPACE_WARNINGS_AS_ERRORS=1 ./scripts/build.sh   # app bundle; warnings fail the build, as in CI
 APP=build/XSpace.app/Contents/MacOS/XSpace
 $APP --selftest && $APP --selftest-persist       # isolation, persistence (in this order)
-$APP --selftest-ui                               # opens a window for about 20 seconds
+$APP --selftest-ui                               # opens a window for about 25 seconds
 ```
 
 - Self-tests use throwaway profiles and never touch real ones. `XSPACE_SELFTEST_OFFLINE=1`

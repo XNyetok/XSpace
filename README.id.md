@@ -133,11 +133,12 @@ profil; sesinya tersimpan.
 ## Pengembangan
 
 ```bash
-swift test                 # unit test: kolom alamat, state tersimpan, pembagi pane, unduhan, ...
+swift test                 # unit test: kolom alamat, state tersimpan, ruang kerja, pembagi pane, ...
 APP=build/XSpace.app/Contents/MacOS/XSpace
 $APP --selftest            # isolasi profil, halaman Google, User-Agent, persistensi (tulis)
 $APP --selftest-persist    # persistensi (baca ulang) + bersih-bersih
-$APP --selftest-ui         # jendela sungguhan dengan state sementara: pembekuan, tukar pane,
+$APP --selftest-ui         # jendela sungguhan dengan state sementara: upgrade dari 0.5.0,
+                           # pembekuan, tukar pane, ruang kerja dengan beberapa profil,
                            # hapus profil, indikator RAM
 ```
 
@@ -149,10 +150,12 @@ Semua self-test memakai profil uji sementara dan tidak menyentuh profil asli. Se
 | File | Isi |
 |---|---|
 | `Sources/XSpace/Models.swift` | state yang disimpan; satu profil = satu `WKWebsiteDataStore` |
+| `Sources/XSpace/Workspace.swift` | ruang kerja: pohon tata letak pane, migrasi dari 0.5.0, aturan untuk tata letak yang disimpan |
 | `Sources/XSpace/WebKitSupport.swift` | konfigurasi webview, User-Agent Safari, penghapusan data store, unduhan, halaman error |
 | `Sources/XSpace/PaneView.swift` | satu pane: toolbar mini + `WKWebView` + delegate navigasi/UI |
-| `Sources/XSpace/ProfileRowView.swift` | baris profil, pembagi pane, container grid |
-| `Sources/XSpace/MainWindowController.swift` | jendela utama, toolbar, aksi profil, hemat RAM |
+| `Sources/XSpace/WorkspaceView.swift` | pane satu ruang kerja (lazy load, pembekuan), container ruang kerja |
+| `Sources/XSpace/PaneSplitView.swift` | pembagi pane: berdampingan atau bertumpuk, bersarang, tombol tukar |
+| `Sources/XSpace/MainWindowController.swift` | jendela utama, toolbar, aksi ruang kerja dan profil, hemat RAM |
 | `Sources/XSpace/MemoryMonitor.swift` | pengukuran memori dan pemantau tekanan memori macOS |
 | `Sources/XSpace/PopupWindowController.swift` | popup yang tetap di profilnya |
 | `Sources/XSpace/AppDelegate.swift` | menu dan siklus hidup app |

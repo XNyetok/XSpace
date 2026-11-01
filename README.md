@@ -132,12 +132,13 @@ sign in once per profile; the session is kept.
 ## Development
 
 ```bash
-swift test                 # unit tests: address bar, saved state, pane splitter, downloads, ...
+swift test                 # unit tests: address bar, saved state, workspaces, pane splitter, ...
 APP=build/XSpace.app/Contents/MacOS/XSpace
 $APP --selftest            # profile isolation, Google pages, User-Agent, persistence (write)
 $APP --selftest-persist    # persistence (read back) + cleanup
-$APP --selftest-ui         # real window with throwaway state: freezing, swapping panes,
-                           # deleting a profile, RAM indicator
+$APP --selftest-ui         # real window with throwaway state: upgrading from 0.5.0, freezing,
+                           # swapping panes, a workspace with several profiles, deleting a
+                           # profile, RAM indicator
 ```
 
 All self-tests use their own throwaway profiles and never touch your real ones. Set
@@ -148,10 +149,12 @@ All self-tests use their own throwaway profiles and never touch your real ones. 
 | File | Contents |
 |---|---|
 | `Sources/XSpace/Models.swift` | persisted state; one profile = one `WKWebsiteDataStore` |
+| `Sources/XSpace/Workspace.swift` | workspaces: layout tree of panes, migration from 0.5.0, rules for saved layouts |
 | `Sources/XSpace/WebKitSupport.swift` | web view configuration, Safari User-Agent, deleting data stores, downloads, error page |
 | `Sources/XSpace/PaneView.swift` | one pane: mini toolbar + `WKWebView` + navigation/UI delegates |
-| `Sources/XSpace/ProfileRowView.swift` | profile row, pane splitter, grid container |
-| `Sources/XSpace/MainWindowController.swift` | main window, toolbar, profile actions, memory saving |
+| `Sources/XSpace/WorkspaceView.swift` | one workspace's panes (lazy loading, freezing), container of the workspaces |
+| `Sources/XSpace/PaneSplitView.swift` | pane splitter: side by side or stacked, nested, swap button |
+| `Sources/XSpace/MainWindowController.swift` | main window, toolbar, workspace and profile actions, memory saving |
 | `Sources/XSpace/MemoryMonitor.swift` | memory measurement and macOS memory-pressure watcher |
 | `Sources/XSpace/PopupWindowController.swift` | popups that stay in their profile |
 | `Sources/XSpace/AppDelegate.swift` | menus and app lifecycle |
