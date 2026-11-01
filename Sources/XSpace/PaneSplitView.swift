@@ -11,6 +11,7 @@ final class PaneSplitView: NSView {
     static let minimumPaneWidth: CGFloat = 200
     /// The pane toolbar (32 pt) plus room for the page.
     static let minimumPaneHeight: CGFloat = 160
+    static let dividerThickness: CGFloat = 6
 
     /// Side by side or stacked.
     var axis: SplitAxis = .horizontal {
@@ -24,17 +25,22 @@ final class PaneSplitView: NSView {
     private(set) var panes: [NSView] = []
     private(set) var swapButtons: [PaneSwapButton] = []
     private var dividers: [PaneDividerView] = []
-    private let dividerThickness: CGFloat = 6
+    private let dividerThickness = PaneSplitView.dividerThickness
 
+    /// Shows `views` in this order. Views that are already shown stay where they are in the view
+    /// hierarchy (a web view that leaves the window stops drawing for a moment); only views that
+    /// come or go are added or removed.
     func setPanes(_ views: [NSView]) {
         // A view that has moved into another split in the meantime stays where it is.
-        for view in panes where view.superview === self { view.removeFromSuperview() }
+        for view in panes where view.superview === self && !views.contains(where: { $0 === view }) {
+            view.removeFromSuperview()
+        }
         dividers.forEach { $0.removeFromSuperview() }
         swapButtons.forEach { $0.removeFromSuperview() }
         panes = views
         dividers = []
         swapButtons = []
-        for view in views {
+        for view in views where view.superview !== self {
             view.translatesAutoresizingMaskIntoConstraints = true
             addSubview(view)
         }

@@ -197,6 +197,35 @@ final class PaneSplitViewTests: XCTestCase {
         XCTAssertEqual(right.frame.width, 406)
     }
 
+    /// Counts how often a view is put into or taken out of a superview.
+    private final class MoveCountingView: NSView {
+        var moves = 0
+        override func viewDidMoveToSuperview() {
+            super.viewDidMoveToSuperview()
+            moves += 1
+        }
+    }
+
+    /// Splitting or closing a pane must not take the web views next to it out of the window.
+    @MainActor
+    func testPanesThatStayAreLeftInPlace() {
+        let split = PaneSplitView(frame: NSRect(x: 0, y: 0, width: 1012, height: 300))
+        let (a, b) = (MoveCountingView(), MoveCountingView())
+        split.setPanes([a, b])
+        let new = NSView()
+        split.ratios = [0.5, 0.25, 0.25]
+        split.setPanes([a, new, b])
+        split.layout()
+        XCTAssertEqual([a.moves, b.moves], [1, 1], "added once, never taken out")
+        XCTAssertTrue(split.panes.elementsEqual([a, new, b], by: ===))
+        XCTAssertEqual([a, new, b].map(\.frame.width), [500, 250, 250])
+        XCTAssertEqual(split.swapButtons.count, 2)
+
+        split.setPanes([a, b])
+        XCTAssertNil(new.superview)
+        XCTAssertEqual([a.moves, b.moves], [1, 1])
+    }
+
     /// When a workspace is rebuilt, its panes move into new splits before the old ones are emptied.
     @MainActor
     func testAViewThatMovedToAnotherSplitStaysThere() {
