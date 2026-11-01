@@ -26,6 +26,8 @@ final class SelfTest: NSObject, NSApplicationDelegate {
     private static let persistID = UUID(uuidString: "6B1F0C9E-5A7D-4E1B-9C2A-58F3D0A1B2C3")!
     private static let testHTML = "<!doctype html><title>xspace-selftest</title><p>xspace</p>"
     private static let testBase = URL(string: "https://example.com/")!
+    /// The Google pages XSpace is mostly used for.
+    private static let googlePages = ["https://aistudio.google.com/", "https://docs.google.com/spreadsheets/"]
 
     private let mode: Mode
     private var failures = 0
@@ -88,7 +90,7 @@ final class SelfTest: NSObject, NSApplicationDelegate {
             log("\n[2] Google pages: skipped (XSPACE_SELFTEST_OFFLINE=1)")
         } else {
             log("\n[2] Loading Google pages without signing in (test profile A)")
-            for target in Defaults.paneURLs {
+            for target in Self.googlePages {
                 webA!.load(URLRequest(url: URL(string: target)!))
                 let loaded = await waitUntilLoaded(webA!, timeout: 45)
                 try? await Task.sleep(nanoseconds: 1_500_000_000)

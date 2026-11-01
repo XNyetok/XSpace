@@ -3,7 +3,6 @@ import AppKit
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var controller: MainWindowController?
-    private let paneMenu = NSMenu(title: "Pane")
     private let profilesMenu = NSMenu(title: "Profil")
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -12,10 +11,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self else { return }
             await StateStore.shared.purgePendingDeletions()
             let controller = MainWindowController()
-            controller.onWorkspacesChanged = { [weak self] in
-                self?.rebuildPaneMenu()
-                self?.rebuildProfilesMenu()
-            }
+            controller.onProfilesChanged = { [weak self] in self?.rebuildProfilesMenu() }
             self.controller = controller
             self.installMainMenu()
             controller.showWindow(nil)
@@ -107,7 +103,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         add(editMenu, to: mainMenu)
 
         let viewMenu = NSMenu(title: "Tampilan")
-        viewMenu.addItem(item("Tampilkan Semua Profil", #selector(MainWindowController.toggleShowAll(_:)), "g", [.command, .control], target: controller))
+        let layoutMenu = NSMenu(title: "Tata Letak")
+        for preset in GridPreset.allCases {
+            let entry = item(preset.title, #selector(MainWindowController.chooseLayout(_:)), "", [], target: controller)
+            entry.representedObject = preset.rawValue
+            entry.image = preset.icon
+            layoutMenu.addItem(entry)
+        }
+        let layoutHolder = NSMenuItem(title: "Tata Letak", action: nil, keyEquivalent: "")
+        layoutHolder.submenu = layoutMenu
+        viewMenu.addItem(layoutHolder)
+        viewMenu.addItem(item("Tampilkan Satu Profil", #selector(MainWindowController.toggleSingleProfile(_:)), "g", [.command, .control], target: controller))
+        viewMenu.addItem(item("Tukar Posisi Pane", #selector(MainWindowController.swapPanes(_:)), "x", [.command, .control], target: controller))
+        viewMenu.addItem(.separator())
         let ramMenu = NSMenu(title: "Hemat RAM")
         ramMenu.addItem(item("Bekukan Profil Tersembunyi Sekarang", #selector(MainWindowController.hibernateHiddenNow(_:)), "", [], target: controller))
         ramMenu.addItem(.separator())
@@ -132,9 +140,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         viewMenu.addItem(item("Layar Penuh", #selector(NSWindow.toggleFullScreen(_:)), "f", [.command, .control]))
         add(viewMenu, to: mainMenu)
 
-        rebuildPaneMenu()
-        add(paneMenu, to: mainMenu)
-
         rebuildProfilesMenu()
         add(profilesMenu, to: mainMenu)
 
@@ -150,32 +155,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.mainMenu = mainMenu
     }
 
-    /// Commands for the pane you are in (see MainWindowController.targetPane).
-    private func rebuildPaneMenu() {
-        guard let controller else { return }
-        paneMenu.removeAllItems()
-        // Control-Command, like Tukar Posisi Pane: web pages rarely use these shortcuts.
-        let rightArrow = "\u{F703}", downArrow = "\u{F701}"   // NSRightArrowFunctionKey, NSDownArrowFunctionKey
-        paneMenu.addItem(item("Bagi ke Kanan", #selector(MainWindowController.splitPaneRight(_:)), rightArrow, [.command, .control], target: controller))
-        paneMenu.addItem(item("Bagi ke Bawah", #selector(MainWindowController.splitPaneDown(_:)), downArrow, [.command, .control], target: controller))
-        paneMenu.addItem(item("Tutup Pane", #selector(MainWindowController.closePane(_:)), "w", [.command, .control], target: controller))
-        paneMenu.addItem(.separator())
-        let profiles = NSMenu(title: "Ganti Profil Pane")
-        for profile in controller.profiles {
-            let entry = item(profile.name, #selector(MainWindowController.showPaneInProfile(_:)), "", [], target: controller)
-            entry.representedObject = profile.id
-            entry.image = Palette.dot(profile.color, diameter: 10)
-            profiles.addItem(entry)
-        }
-        let profilesHolder = NSMenuItem(title: profiles.title, action: nil, keyEquivalent: "")
-        profilesHolder.submenu = profiles
-        paneMenu.addItem(profilesHolder)
-        paneMenu.addItem(.separator())
-        paneMenu.addItem(item("Tukar Posisi Pane", #selector(MainWindowController.swapPanes(_:)), "x", [.command, .control], target: controller))
-        paneMenu.addItem(item("Atur Ulang Pane ke Default", #selector(MainWindowController.resetPanes(_:)), "", [], target: controller))
-    }
-
-    /// Commands for the profile of the pane you are in, and the workspaces.
+    /// Commands for the profile you are in, and the profiles (shown ones are checked).
     private func rebuildProfilesMenu() {
         guard let controller else { return }
         profilesMenu.removeAllItems()
@@ -184,12 +164,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         profilesMenu.addItem(item("Ganti Warna Profil", #selector(MainWindowController.cycleProfileColor(_:)), "", [], target: controller))
         profilesMenu.addItem(item("Hapus Profil…", #selector(MainWindowController.deleteProfile(_:)), "", [], target: controller))
         profilesMenu.addItem(.separator())
-        // The workspaces, like the switcher in the toolbar (⌘1–⌘9).
-        for (index, workspace) in controller.workspaces.enumerated() {
-            let entry = item(controller.title(of: workspace), #selector(MainWindowController.selectWorkspaceFromMenu(_:)),
+        // Like the profiles in the toolbar (⌘1–⌘9).
+        for (index, profile) in controller.profiles.enumerated() {
+            let entry = item(profile.name, #selector(MainWindowController.selectProfileFromMenu(_:)),
                              index < 9 ? "\(index + 1)" : "", [.command], target: controller)
             entry.tag = index
-            entry.image = Palette.dot(controller.color(of: workspace), diameter: 10)
+            entry.image = Palette.dot(profile.color, diameter: 10)
             profilesMenu.addItem(entry)
         }
     }

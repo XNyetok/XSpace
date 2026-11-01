@@ -3,11 +3,15 @@ import Darwin
 import WebKit
 
 /// `XSpace --selftest-ui [shot.png]`: runs the real XSpace window with THROWAWAY state
-/// (temporary folder + new test profiles), checks upgrading from 0.5.0, freezing, swapping panes,
-/// a workspace with several profiles, deleting a profile and the RAM indicator, then deletes
-/// everything. Real profiles are never touched. With a .png argument it also saves a snapshot.
+/// (temporary folder + new test profiles), checks upgrading from 0.5.0, freezing, the layouts,
+/// showing and swapping profiles, the keyboard focus, deleting a profile and the RAM indicator,
+/// then deletes everything. Real profiles are never touched. With a .png argument it also saves
+/// a snapshot of the 1 + 3 layout.
 @MainActor
 final class UISelfTest: NSObject, NSApplicationDelegate {
+    private static let aiStudio = "https://aistudio.google.com/"
+    private static let sheets = "https://docs.google.com/spreadsheets/"
+
     private let stateDirectory: URL
     private var failures = 0
 
@@ -26,49 +30,42 @@ final class UISelfTest: NSObject, NSApplicationDelegate {
     }
 
     private func run() async {
-        log("XSpace UI self-test — upgrading, freezing, workspaces, deleting, RAM indicator "
+        log("XSpace UI self-test — upgrading, freezing, layouts, keyboard focus, deleting, RAM indicator "
             + "(throwaway state, test profiles)")
 
         log("\n[0] Upgrading from 0.5.0")
-        // The window opens on a state.json as 0.5.0 left it: two test profiles, the second selected.
+        // The window opens on a state.json as 0.5.0 left it: two test profiles with two panes each
+        // (Google AI Studio | Google Sheets), the second one shown in Fokus mode.
         let (firstID, secondID) = (UUID(), UUID())
         let (first, second) = ("Uji 1", "Uji 2")
         write050State(first: (firstID, first), second: (secondID, second))
         let controller = MainWindowController()
         controller.showWindow(nil)
         controller.testSetPolicy(.memoryPressureOnly)
-        let migrated = controller.workspaces
-        check(migrated.map { controller.title(of: $0) } == [first, second]
-              && migrated.map { $0.root.panes.map(\.profileID) } == [[firstID, firstID], [secondID, secondID]]
-              && migrated.allSatisfy { $0.root.panes.map(\.url) == Defaults.paneURLs },
-              "Every profile becomes a workspace with the same panes")
-        if case .split(let split)? = migrated.first?.root {
-            check(split.ratios == [0.3, 0.7], "Pane widths are kept")
-        } else {
-            check(false, "Pane widths are kept (no split)")
-        }
-        check(workspaceHidden(controller, first) && !workspaceHidden(controller, second),
-              "The profile that was selected is shown")
+        check(controller.profiles.map(\.name) == [first, second]
+              && StateStore.shared.data.profiles.map(\.url) == [Self.aiStudio, Self.aiStudio],
+              "Every profile becomes one pane, with the page of its first pane")
+        check(StateStore.shared.data.layout == .single && controller.testShown == [second],
+              "Fokus becomes the single-profile layout, with the profile that was selected")
         StateStore.shared.save()
         let saved = savedState()
         let savedProfiles = saved["profiles"] as? [[String: Any]] ?? []
-        check(saved["version"] as? Int == 2 && (saved["workspaces"] as? [Any])?.count == 2
+        check(saved["version"] as? Int == 3 && saved["layout"] as? String == "single"
               && savedProfiles.map { $0["id"] as? String } == [firstID.uuidString, secondID.uuidString]
               && savedProfiles.allSatisfy { profile in
-                  (profile["panes"] as? [[String: Any]])?.compactMap { $0["url"] as? String } == Defaults.paneURLs
+                  (profile["panes"] as? [[String: Any]])?.compactMap { $0["url"] as? String } == [Self.aiStudio]
               }
-              && savedProfiles.first?["splitRatios"] as? [Double] == [0.3, 0.7],
-              "The saved file has the workspaces, and every profile's panes for 0.5.0")
+              && saved["selectedProfileID"] as? String == secondID.uuidString && saved["showAll"] as? Bool == false,
+              "The saved file has the layout, and for 0.5.0 every profile with one pane")
         // The first profile has been on screen before (until then it is not loaded at all).
-        controller.testSelect(first)
-        controller.testSelect(second)
+        controller.testShow(first)
+        controller.testShow(second)
         await pause(5)
 
         log("\n[1] Policy: only on memory pressure")
-        check(workspaceHidden(controller, first) && paneCount(controller, first) == 2,
-              "Hidden profile stays alive until memory runs low")
-
-        if let pane = controller.testWorkspace(first)?.panes.first {
+        check(controller.testPane(first) != nil && controller.testShown == [second],
+              "A hidden profile stays alive until memory runs low")
+        if let pane = controller.testPane(first) {
             // Kill the page process for real when allowed (unsandboxed builds). The App Sandbox
             // does not allow it, so there WebKit's termination callback is delivered directly.
             let pid = MemoryProbe.pid(of: pane.webView, "_webProcessIdentifier")
@@ -82,29 +79,22 @@ final class UISelfTest: NSObject, NSApplicationDelegate {
             // be busy loading on its own, so that part is only checked for a real kill.
             check(pane.needsReloadWhenVisible && (!killed || !pane.webView.isLoading),
                   "A hidden pane whose process died is not reloaded in the background (\(killed ? "process killed" : "simulated"))")
-            controller.testSelect(first)
+            controller.testShow(first)
             check(!pane.needsReloadWhenVisible, "That pane is reloaded once it is shown again")
-            controller.testSelect(second)
+            controller.testShow(second)
             await pause(2)
         } else {
-            check(false, "Hidden profile has panes")
+            check(false, "The hidden profile has its pane")
         }
 
         controller.handleMemoryPressure(.warning)
-        check(paneCount(controller, first) == 0, "Memory pressure → hidden profile frozen")
-        check(paneCount(controller, second) == 2, "The visible profile is left alone")
+        check(controller.testPane(first) == nil, "Memory pressure → hidden profile frozen")
+        check(controller.testPane(second) != nil, "The profile on screen is left alone")
 
-        controller.testSelect(first)
+        controller.testShow(first)
         await pause(6)
-        let restoredHost = controller.testWorkspace(first)?.panes.first?.webView.url?.host ?? "-"
-        check(paneCount(controller, first) == 2 && !workspaceHidden(controller, first),
-              "A frozen profile comes back when opened")
-        if let workspace = controller.testWorkspace(first), workspace.panes.count == 2 {
-            workspace.layoutSubtreeIfNeeded()
-            let (left, right) = (workspace.panes[0].frame.width, workspace.panes[1].frame.width)
-            check(left + right > 0 && abs(left / (left + right) - 0.3) < 0.01,
-                  "It comes back with the widths from 0.5.0 (\(Int(left)) | \(Int(right)) pt)")
-        }
+        let restoredHost = controller.testPane(first)?.webView.url?.host ?? "-"
+        check(controller.testPane(first) != nil && controller.testShown == [first], "A frozen profile comes back when shown")
         let offline = ProcessInfo.processInfo.environment["XSPACE_SELFTEST_OFFLINE"] == "1"
         if offline {
             log("  SKIP  Page restore check (offline)")
@@ -114,149 +104,55 @@ final class UISelfTest: NSObject, NSApplicationDelegate {
 
         log("\n[2] Policy: immediately when hidden")
         controller.testSetPolicy(.immediately)
-        controller.testSelect(second)
-        check(paneCount(controller, first) == 0, "Profile is frozen as soon as it is hidden")
+        controller.testShow(second)
+        check(controller.testPane(first) == nil, "A profile is frozen as soon as it is hidden")
 
         log("\n[3] Policy: after 15 minutes off screen")
         controller.testSetPolicy(.after15Minutes)
-        controller.testSelect(first)
+        controller.testShow(first)
         await pause(3)
-        controller.hibernateIdleWorkspaces(now: Date().addingTimeInterval(14 * 60))
-        check(paneCount(controller, second) == 2, "Not frozen before 15 minutes")
-        controller.hibernateIdleWorkspaces(now: Date().addingTimeInterval(16 * 60))
-        check(paneCount(controller, second) == 0, "Frozen after 15 minutes off screen")
+        controller.hibernateIdleProfiles(now: Date().addingTimeInterval(14 * 60))
+        check(controller.testPane(second) != nil, "Not frozen before 15 minutes")
+        controller.hibernateIdleProfiles(now: Date().addingTimeInterval(16 * 60))
+        check(controller.testPane(second) == nil, "Frozen after 15 minutes off screen")
 
-        log("\n[4] Swapping panes")
-        if let workspace = controller.testWorkspace(first), workspace.panes.count == 2 {
-            let (left, right) = (workspace.panes[0], workspace.panes[1])
-            let urlsBefore = workspace.urls
-            controller.window?.makeFirstResponder(left.webView)
-            check(controller.focusedPane === left, "The pane commands act on the pane you are in")
-            controller.swapPanes(nil)
-            workspace.layoutSubtreeIfNeeded()
-            check(workspace.panes[0] === right && workspace.panes[1] === left && right.frame.minX < left.frame.minX,
-                  "The two panes trade places (same web views, nothing recreated)")
-            let saved = StateStore.shared.data.workspaces.first { $0.id == workspace.id }?.root.panes.map(\.url)
-            check(workspace.urls == Array(urlsBefore.reversed()) && saved == workspace.urls, "The new order is saved")
-            controller.swapPanes(nil)   // the focused pane is the last one now: it swaps with the one before
-            workspace.layoutSubtreeIfNeeded()
-            check(workspace.panes[0] === left && left.frame.minX < right.frame.minX, "Swapping again restores the order")
-        } else {
-            check(false, "Visible profile has two panes")
-        }
-        if let frozen = controller.testWorkspace(second), !frozen.isAwake {
-            let before = frozen.urls
-            frozen.swapPanes(at: 0)
-            check(frozen.urls == Array(before.reversed()) && !frozen.isAwake,
-                  "A frozen profile can be swapped without waking it")
-            frozen.swapPanes(at: 0)
-        }
+        log("\n[4] Layouts")
+        await checkLayouts(controller, first: first, second: second)
 
-        log("\n[5] A workspace with several profiles, side by side and stacked")
-        // The window cannot create one yet. One tall pane on the left, two stacked on the right.
-        let mixedID = controller.testAddWorkspace(.split(LayoutSplit(id: UUID(), axis: .horizontal, children: [
-            .pane(LayoutPane(id: UUID(), profileID: firstID, url: "about:blank")),
-            .split(LayoutSplit(id: UUID(), axis: .vertical, children: [
-                .pane(LayoutPane(id: UUID(), profileID: secondID, url: "about:blank")),
-                .pane(LayoutPane(id: UUID(), profileID: firstID, url: "about:blank")),
-            ], ratios: nil)),
-        ], ratios: nil)))
-        await pause(2)
-        if let mixed = controller.testWorkspace(id: mixedID), mixed.panes.count == 3 {
-            await checkMixedWorkspace(mixed, profiles: [firstID, secondID, firstID])
-            // Stacked panes swap too, with ⌃⌘X (the ⇄ button is only between panes side by side).
-            let (top, bottom) = (mixed.panes[1], mixed.panes[2])
-            controller.window?.makeFirstResponder(top.webView)
-            controller.swapPanes(nil)
-            mixed.layoutSubtreeIfNeeded()
-            check(mixed.panes[1] === bottom && mixed.panes[2] === top && bottom.frame.minY > top.frame.minY,
-                  "Two stacked panes trade places")
-            controller.swapPanes(nil)
-            mixed.layoutSubtreeIfNeeded()
-            let layoutBefore = mixed.currentLayout()
-            controller.testSelect(first)
-            let shownPane = controller.testWorkspace(first)?.panes.first
-            check(controller.focusedPane != nil && controller.focusedPane === shownPane,
-                  "The keyboard focus leaves a workspace that is hidden, for the first pane of the one shown")
-            check(controller.window?.makeFirstResponder(top.webView) == false && controller.focusedPane === shownPane,
-                  "A page that is not on screen cannot take the keyboard focus")
-            controller.hibernateHiddenNow(nil)
-            check(!mixed.isAwake && mixed.panes.isEmpty, "A hidden workspace is frozen as a whole")
-            controller.testSelectWorkspace(id: mixedID)
-            check(mixed.isAwake && mixed.panes.map(\.profile.id) == [firstID, secondID, firstID]
-                  && mixed.layout == layoutBefore,
-                  "It comes back with the same layout and pages")
-        } else {
-            check(false, "The workspace shows three panes")
-        }
+        log("\n[5] Keyboard focus")
+        checkKeyboardFocus(controller)
 
-        log("\n[6] Pane commands")
-        controller.testSelect(first)
-        if let workspace = controller.testWorkspace(first), workspace.panes.count == 2 {
-            checkShowingInAnotherProfile(controller, workspace, first: (firstID, first), second: (secondID, second))
-            checkSplittingAndClosing(controller, workspace, second: (secondID, second))
-        } else {
-            check(false, "The first workspace has two panes")
-        }
-        let singleID = controller.testAddWorkspace(.pane(LayoutPane(id: UUID(), profileID: firstID, url: "about:blank")))
-        if let single = controller.testWorkspace(id: singleID), let pane = single.panes.first,
-           let paneID = single.paneID(of: pane) {
-            controller.window?.makeFirstResponder(pane.webView)
-            let closeItem = NSMenuItem(title: "Tutup Pane", action: #selector(MainWindowController.closePane(_:)), keyEquivalent: "")
-            check(!controller.validateMenuItem(closeItem)
-                  && controller.paneMenu(in: single, paneID: paneID)?.items.last?.isEnabled == false,
-                  "The only pane of a workspace cannot be closed")
-        } else {
-            check(false, "A workspace with one pane shows it")
-        }
-
-        log("\n[7] RAM indicator")
+        log("\n[6] RAM indicator")
         let report = controller.memoryReport()
         log("   total \(report.totalText) — UI \(MemoryProbe.format(report.app)), GPU \(MemoryProbe.format(report.gpu)), networking \(MemoryProbe.format(report.network))")
         for usage in report.profiles {
-            log("   \(usage.name): \(MemoryProbe.format(usage.bytes)), \(usage.panes) pane(s)\(usage.hidden ? ", hidden" : "")")
+            log("   \(usage.name): \(MemoryProbe.format(usage.bytes))\(usage.panes == 0 ? ", frozen" : "")\(usage.hidden ? ", hidden" : "")")
         }
         check(report.app > 0 && report.total > report.app, "Indicator reads app + page memory")
 
         let args = CommandLine.arguments
         if let index = args.firstIndex(of: "--selftest-ui"), index + 1 < args.count, args[index + 1].hasSuffix(".png") {
             controller.testSetPolicy(.never)
-            controller.testSelect(second)
             await pause(6)
             await controller.writeSnapshot(to: URL(fileURLWithPath: args[index + 1]))
         }
 
-        log("\n[8] Deleting a profile")
-        // A new profile is selected, so its panes load, as when the user deletes the profile on
-        // screen. It also gets a pane in a workspace it shares with another profile, which is shown
-        // too. Only its ID is kept here: holding the Profile would keep its data store alive.
-        let third = controller.createProfile(name: "Uji 3").id
-        let sharedID = controller.testAddWorkspace(.split(LayoutSplit(id: UUID(), axis: .vertical, children: [
-            .pane(LayoutPane(id: UUID(), profileID: third, url: "about:blank")),
-            .pane(LayoutPane(id: UUID(), profileID: secondID, url: "about:blank")),
-        ], ratios: nil)))
-        await pause(3)
-        // Weak: holding the pane would keep its profile's data store in use after the clean-up.
-        weak let kept = controller.testWorkspace(id: sharedID)?.panes.first { $0.profile.id == secondID }
-        let watch = controller.profiles.first { $0.id == third }.map {
-            DeletionWatch(profile: $0, workspace: controller.testWorkspace($0.name), panes: controller.testPanes(of: $0.id))
+        log("\n[7] Deleting a profile")
+        // Uji 5 is shown and has the keyboard focus, as when you delete the profile you are in.
+        // Only its ID is kept here: holding the Profile would keep its data store alive.
+        let fifth = controller.profiles.first { $0.name == "Uji 5" }?.id ?? UUID()
+        let watch = controller.profiles.first { $0.id == fifth }.map {
+            DeletionWatch(profile: $0, pane: controller.testPane($0.name))
         }
-        log("   watching \(watch?.paneCount ?? 0) pane(s) in 2 workspaces")
-        // Showing the shared workspace hid the profile's own one. A web view of it that kept the
-        // keyboard focus could stay alive after the deletion (seen in about 1 of 5 runs).
-        check((controller.window?.firstResponder as? NSView)?.isHiddenOrHasHiddenAncestor != true,
-              "No page that is not on screen has the keyboard focus")
         let deleteStart = Date()
-        await controller.testDelete(third)
+        await controller.testDelete(fifth)
         let seconds = String(format: "%.1f", Date().timeIntervalSince(deleteStart))
         let released = watch?.xspaceReleased ?? false
-        check(released, "XSpace lets go of a deleted profile, in every workspace"
-              + (released ? "" : " (still alive: \(watch?.alive ?? "-"))"))
-        let keptAlone = controller.testWorkspace(id: sharedID).map { $0.panes.count == 1 && $0.panes.first === kept } ?? false
-        check(kept != nil && keptAlone && kept?.webView.superview === kept,
-              "The other profile's pane stays in the shared workspace and keeps running")
+        check(released, "XSpace lets go of a deleted profile" + (released ? "" : " (still alive: \(watch?.alive ?? "-"))"))
+        check(controller.testShown == [first, second, "Uji 3", "Uji 4"],
+              "A profile that was hidden takes the deleted profile's place (\(controller.testShown.map { $0 ?? "-" }))")
         let stores = await WKWebsiteDataStore.allDataStoreIdentifiers
-        let queued = StateStore.shared.data.pendingDeletion.contains(third)
+        let queued = StateStore.shared.data.pendingDeletion.contains(fifth)
         let heldByWebKit = queued && released && watch?.storeReleased == false
         if heldByWebKit {
             // WebKit can hold a store for longer than DataStoreRemoval waits (seen once on macOS 26,
@@ -265,14 +161,14 @@ final class UISelfTest: NSObject, NSApplicationDelegate {
             log("  NOTE  WebKit still held the data store after \(seconds) s, so the app deletes it at "
                 + "the next launch (still alive: \(watch?.alive ?? "-"))")
         } else {
-            check(!queued && !stores.contains(third), "Deleting a profile deletes its data store right away (\(seconds) s)")
+            check(!queued && !stores.contains(fifth), "Deleting a profile deletes its data store right away (\(seconds) s)")
         }
 
-        log("\n[9] Clean up")
+        log("\n[8] Clean up")
         var removals = controller.profiles.map { DataStoreRemoval($0.store) }
         // The deleted profile's store is still there if WebKit held it (see the note above) or if
         // the checks above failed. It belongs to the throwaway state, so it must not stay behind.
-        if stores.contains(third), let removal = watch?.removal { removals.append(removal) }
+        if stores.contains(fifth), let removal = watch?.removal { removals.append(removal) }
         controller.testDestroyAll()
         controller.close()
         for removal in removals {
@@ -280,22 +176,124 @@ final class UISelfTest: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// [4]: switching layouts, swapping, sizes, empty slots, new profiles, showing a hidden profile,
+    /// the pane menu, Ctrl-Cmd-G and the automatic layout. Starts with the single-profile layout
+    /// showing `first`, and ends with 1 + 3 showing Uji 1–4 (Uji 5 hidden).
+    private func checkLayouts(_ controller: MainWindowController, first: String, second: String) async {
+        let grid = controller.testGrid
+        controller.setLayout(.twoColumns)
+        await pause(1)
+        grid.layoutSubtreeIfNeeded()
+        guard let a = controller.testPane(first), let b = controller.testPane(second) else {
+            return check(false, "2 berdampingan shows both profiles")
+        }
+        check(controller.testShown == [first, second] && a.frame.maxX < b.frame.minX
+              && controller.testSelectedInToolbar == [first, second],
+              "2 berdampingan: the profile shown, then the other, both selected in the toolbar")
+
+        controller.window?.makeFirstResponder(a.webView)
+        controller.swapPanes(nil)
+        grid.layoutSubtreeIfNeeded()
+        check(controller.testShown == [second, first] && b.frame.maxX < a.frame.minX
+              && controller.testPane(first) === a && controller.focusedPane === a,
+              "Tukar Posisi Pane: the two trade places, nothing reloads, and the focus stays")
+        if let button = grid.splitView(at: [])?.swapButtons.first {
+            button.performClick(nil)
+            grid.layoutSubtreeIfNeeded()
+            check(controller.testShown == [first, second] && a.frame.maxX < b.frame.minX, "The ⇄ button swaps them back")
+        } else {
+            check(false, "A ⇄ button between the two panes")
+        }
+
+        if let split = grid.splitView(at: []) {
+            split.dragDivider(at: 0, to: 300)
+            split.dividerDragEnded()
+            controller.setLayout(.single)
+            controller.setLayout(.twoColumns)
+            grid.layoutSubtreeIfNeeded()
+            check(abs(a.frame.width - 300) <= 1 && controller.testShown == [first, second],
+                  "A layout keeps its profiles and its sizes (\(Int(a.frame.width)) pt)")
+            grid.splitView(at: [])?.equalize()
+        }
+
+        controller.setLayout(.oneAndThree)
+        check(controller.testShown == [first, second, nil, nil]
+              && controller.emptySlotMenu(2).items.map(\.title) == ["Tambah Profil…"],
+              "1 + 3 with two profiles: two empty slots, which offer a new profile")
+        let third = controller.createProfile(name: "Uji 3").id
+        let fourth = controller.createProfile(name: "Uji 4").id
+        await pause(2)
+        grid.layoutSubtreeIfNeeded()
+        let names = [first, second, "Uji 3", "Uji 4"]
+        let panes = names.compactMap { controller.testPane($0) }
+        guard controller.testShown == names, panes.count == 4 else {
+            return check(false, "New profiles fill the empty slots (\(controller.testShown.map { $0 ?? "-" }))")
+        }
+        let frames = panes.map { $0.convert($0.bounds, to: grid) }
+        check(abs(frames[0].height - grid.bounds.height) < 1 && frames.dropFirst().allSatisfy { $0.minX >= frames[0].maxX }
+              && frames[1].minY > frames[2].maxY && frames[2].minY > frames[3].maxY,
+              "New profiles fill the empty slots: one profile as tall as the window on the left, three stacked on the right")
+        check(Set(panes.map { ObjectIdentifier($0.profile.store) }).count == 4
+              && panes.allSatisfy { $0.webView.configuration.websiteDataStore === $0.profile.store },
+              "Every pane is its own profile, with its own data store")
+
+        controller.window?.makeFirstResponder(panes[2].webView)
+        controller.createProfile(name: "Uji 5")   // every slot is taken: it takes the place of Uji 3
+        check(controller.testShown == [first, second, "Uji 5", "Uji 4"] && controller.testPane("Uji 3") === panes[2]
+              && controller.testSelectedInToolbar == [first, second, "Uji 4", "Uji 5"],
+              "A new profile takes the place of the pane you are in; the profile there stays alive, hidden")
+        controller.testClickInToolbar("Uji 3")   // with the focus in Uji 5
+        check(controller.testShown == names && controller.testPane("Uji 3") === panes[2],
+              "Clicking a hidden profile in the toolbar shows it in the pane you are in, as it was")
+
+        if let menu = controller.paneMenu(for: fourth), let index = menu.items.firstIndex(where: { $0.title == first }) {
+            check(menu.items.first { $0.state == .on }?.title == "Uji 4", "The pane menu marks the pane's profile")
+            menu.performActionForItem(at: index)
+            check(controller.testShown == ["Uji 4", second, "Uji 3", first],
+                  "The pane menu: a profile shown elsewhere trades places with it")
+            if let back = controller.paneMenu(for: fourth), let item = back.items.firstIndex(where: { $0.title == first }) {
+                back.performActionForItem(at: item)
+            }
+        } else {
+            check(false, "The pane menu lists the profiles")
+        }
+        check(controller.testShown == names && third != fourth, "And back")
+
+        controller.window?.makeFirstResponder(panes[1].webView)
+        controller.toggleSingleProfile(nil)
+        check(controller.testShown == [second], "⌃⌘G shows only the profile you are in")
+        controller.toggleSingleProfile(nil)
+        check(controller.testShown == names, "⌃⌘G again: the layout before, with the same profiles")
+
+        controller.setLayout(.automatic)
+        check(controller.testShown == [first, second, "Uji 3", "Uji 4", "Uji 5"], "Otomatis shows every profile")
+        controller.setLayout(.oneAndThree)
+    }
+
+    /// [5]: the keyboard focus never stays in a page that is not on screen. Layout 1 + 3 with
+    /// Uji 5 hidden; afterwards Uji 5 is shown instead of Uji 4.
+    private func checkKeyboardFocus(_ controller: MainWindowController) {
+        guard let hidden = controller.testPane("Uji 5"), let shown = controller.testPane("Uji 4") else {
+            return check(false, "Uji 4 is shown and Uji 5 hidden but alive")
+        }
+        controller.window?.makeFirstResponder(shown.webView)
+        check(controller.window?.makeFirstResponder(hidden.webView) == false && controller.focusedPane === shown,
+              "A page that is not on screen cannot take the keyboard focus")
+        controller.testClickInToolbar("Uji 5")
+        check(controller.focusedPane === hidden && controller.testShown.contains("Uji 5") && !controller.testShown.contains("Uji 4"),
+              "A profile shown from the toolbar takes the place and the keyboard focus of the pane you are in")
+        check((controller.window?.firstResponder as? NSView)?.isHiddenOrHasHiddenAncestor != true,
+              "No page that is not on screen has the keyboard focus")
+    }
+
     // MARK: Helpers
 
-    private func paneCount(_ controller: MainWindowController, _ name: String) -> Int {
-        controller.testWorkspace(name)?.panes.count ?? -1
-    }
-
-    private func workspaceHidden(_ controller: MainWindowController, _ name: String) -> Bool {
-        controller.testWorkspace(name)?.isHidden ?? false
-    }
-
-    /// Writes state.json as XSpace 0.5.0 left it (see [0]): two profiles with the default panes,
-    /// the first with its panes at 30 % | 70 %, and the second one selected.
+    /// Writes state.json as XSpace 0.5.0 left it (see [0]): two profiles with the default panes, the
+    /// second one selected in Fokus mode.
     private func write050State(first: (id: UUID, name: String), second: (id: UUID, name: String)) {
         func profile(_ id: UUID, _ name: String, colorIndex: Int) -> [String: Any] {
             ["id": id.uuidString, "name": name, "colorIndex": colorIndex,
-             "panes": Defaults.paneURLs.map { ["url": $0] }]
+             "panes": [Self.aiStudio, Self.sheets].map { ["url": $0] }]
         }
         var firstProfile = profile(first.id, first.name, colorIndex: 0)
         firstProfile["splitRatios"] = [0.3, 0.7]
@@ -316,118 +314,11 @@ final class UISelfTest: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// [6]: showing a pane in another profile, from the pane's own menu (its profile name) and from
-    /// Pane → Ganti Profil Pane. `workspace` shows two panes of the first profile.
-    private func checkShowingInAnotherProfile(_ controller: MainWindowController, _ workspace: WorkspaceView,
-                                              first: (id: UUID, name: String), second: (id: UUID, name: String)) {
-        let (left, right) = (workspace.panes[0], workspace.panes[1])
-        guard let rightID = workspace.paneID(of: right), let menu = controller.paneMenu(in: workspace, paneID: rightID) else {
-            return check(false, "The pane has a menu")
-        }
-        check(menu.items.first { $0.state == .on }?.title == first.name, "The pane's menu marks its profile")
-        guard let index = menu.items.firstIndex(where: { $0.title == second.name }) else {
-            return check(false, "The pane's menu lists the other profile")
-        }
-        menu.performActionForItem(at: index)
-        workspace.layoutSubtreeIfNeeded()
-        let shown = workspace.panes
-        check(shown.count == 2 && shown[0] === left && shown[1] !== right && shown[1].profile.id == second.id
-              && shown[1].webView.configuration.websiteDataStore === shown[1].profile.store
-              && right.webView.superview == nil,
-              "The pane shows the other profile in a new web view; the pane next to it keeps running")
-        let saved = StateStore.shared.data.workspaces.first { $0.id == workspace.id }
-        check(saved?.root.panes.map(\.profileID) == [first.id, second.id]
-              && saved.map { controller.title(of: $0) } == "\(first.name) + \(second.name)"
-              && controller.focusedPane === shown[1],
-              "The change is saved, the workspace is named after both profiles, and the pane has the focus")
-        let item = NSMenuItem()
-        item.representedObject = first.id
-        controller.showPaneInProfile(item)   // Pane → Ganti Profil Pane acts on the pane you are in
-        check(workspace.panes.count == 2 && workspace.panes[0] === left && workspace.panes[1].profile.id == first.id,
-              "Pane → Ganti Profil Pane shows the pane you are in in the first profile again")
-    }
-
-    /// [6]: splitting and closing panes, from the Pane menu and from the pane's own menu.
-    /// `workspace` shows two panes of the first profile side by side at 30 % | 70 % (see [0]). The
-    /// right one is split: a pane needs room for two panes, also on the smaller screen in CI.
-    private func checkSplittingAndClosing(_ controller: MainWindowController, _ workspace: WorkspaceView,
-                                          second: (id: UUID, name: String)) {
-        let (left, right) = (workspace.panes[0], workspace.panes[1])
-        workspace.layoutSubtreeIfNeeded()
-        let widthsBefore = [left.frame.width, right.frame.width]
-        controller.window?.makeFirstResponder(right.webView)
-        controller.splitPaneRight(nil)
-        workspace.layoutSubtreeIfNeeded()
-        var panes = workspace.panes
-        guard panes.count == 3 else {
-            return check(false, "Bagi ke Kanan adds a pane (\(panes.count) panes; the pane is \(Int(widthsBefore[1])) pt wide)")
-        }
-        let added = panes[2]
-        check(panes[0] === left && panes[1] === right && added.profile.id == right.profile.id
-              && workspace.urls[2] == workspace.urls[1] && right.frame.maxX < added.frame.minX
-              && controller.focusedPane === added,
-              "Bagi ke Kanan: a new pane right of it, same profile and page, with the focus; the others keep running")
-
-        guard let addedID = workspace.paneID(of: added),
-              let down = controller.paneMenu(in: workspace, paneID: addedID)?.items.first(where: { $0.title == "Bagi ke Bawah" })?.submenu,
-              let index = down.items.firstIndex(where: { $0.title == second.name }) else {
-            return check(false, "The pane's menu offers Bagi ke Bawah in the other profile")
-        }
-        down.performActionForItem(at: index)
-        workspace.layoutSubtreeIfNeeded()
-        panes = workspace.panes
-        guard panes.count == 4 else {
-            return check(false, "Bagi ke Bawah adds a pane (\(panes.count) panes; the pane is \(Int(added.frame.height)) pt high)")
-        }
-        let below = panes[3]
-        check(panes[1] === right && panes[2] === added && below.profile.id == second.id
-              && added.superview === below.superview && added.frame.minY > below.frame.maxY,
-              "Bagi ke Bawah from the pane's menu: a pane below it, in the profile chosen")
-        let saved = StateStore.shared.data.workspaces.first { $0.id == workspace.id }?.root.panes.map(\.profileID)
-        check(saved == panes.map(\.profile.id), "The new layout is saved")
-
-        controller.window?.makeFirstResponder(below.webView)
-        controller.closePane(nil)
-        check(workspace.panes.count == 3 && controller.focusedPane === added,
-              "Tutup Pane closes the pane you are in, and the focus moves to the pane next to it")
-        controller.window?.makeFirstResponder(added.webView)
-        controller.closePane(nil)
-        workspace.layoutSubtreeIfNeeded()
-        let widthsAfter = [left.frame.width, right.frame.width]
-        check(workspace.panes.count == 2 && workspace.panes[0] === left && workspace.panes[1] === right
-              && zip(widthsBefore, widthsAfter).allSatisfy { abs($0 - $1) <= 1 },
-              "Closing the new panes gives the two panes their place and size back "
-              + "(\(widthsBefore.map { Int($0) }) → \(widthsAfter.map { Int($0) }) pt)")
-    }
-
     /// state.json as saved, as JSON.
     private func savedState() -> [String: Any] {
         guard let data = try? Data(contentsOf: StateStore.shared.fileURL),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return [:] }
         return json
-    }
-
-    /// [5]: a workspace with one tall pane on the left and two stacked on the right, whose panes
-    /// show `profiles` in reading order (the first and the last the same profile).
-    private func checkMixedWorkspace(_ mixed: WorkspaceView, profiles: [UUID]) async {
-        mixed.layoutSubtreeIfNeeded()
-        let panes = mixed.panes
-        check(panes.map(\.profile.id) == profiles, "Each pane shows the profile it was given")
-        check(panes.allSatisfy { $0.webView.configuration.websiteDataStore === $0.profile.store }
-              && panes[0].profile.store !== panes[1].profile.store,
-              "Each pane uses its own profile's data store")
-        let frames = panes.map { $0.convert($0.bounds, to: mixed) }
-        check(abs(frames[0].height - mixed.bounds.height) < 1
-              && frames[1].minX >= frames[0].maxX && frames[2].minX >= frames[0].maxX
-              && frames[1].minY >= frames[2].maxY,
-              "One pane as tall as the workspace on the left, two stacked on the right")
-        guard let cookie = HTTPCookie(properties: [.name: "xspace-uitest", .value: "1",
-                                                   .domain: "xspace.test", .path: "/"]) else { return }
-        await panes[0].webView.configuration.websiteDataStore.httpCookieStore.setCookie(cookie)
-        let sameProfile = await panes[2].webView.configuration.websiteDataStore.httpCookieStore.allCookies()
-        let otherProfile = await panes[1].webView.configuration.websiteDataStore.httpCookieStore.allCookies()
-        check(sameProfile.contains { $0.name == cookie.name } && !otherProfile.contains { $0.name == cookie.name },
-              "A cookie set in one profile reaches its other pane, not the other profile's")
     }
 
     private func pause(_ seconds: Double) async {
@@ -451,8 +342,8 @@ final class UISelfTest: NSObject, NSApplicationDelegate {
     }
 }
 
-/// Watches a profile while it is deleted (see [8]) without keeping anything alive: weak references
-/// to XSpace's objects and the data store, and the PIDs of the panes' page processes.
+/// Watches a profile while it is deleted (see [7]) without keeping anything alive: weak references
+/// to XSpace's objects and the data store, and the PID of the pane's page process.
 @MainActor
 private final class DeletionWatch {
     private final class WeakBox {
@@ -460,35 +351,27 @@ private final class DeletionWatch {
         init(_ object: AnyObject) { self.object = object }
     }
 
-    /// Deletes the store if the app could not (see [9]).
+    /// Deletes the store if the app could not (see [8]).
     let removal: DataStoreRemoval
-    let paneCount: Int
     private let xspaceObjects: [(name: String, box: WeakBox)]
     private let store: WeakBox
     private let pids: [pid_t]
 
-    /// - Parameters:
-    ///   - workspace: the profile's own workspace, which goes with it.
-    ///   - panes: the profile's panes in every workspace.
-    init(profile: Profile, workspace: WorkspaceView?, panes: [PaneView]) {
+    init(profile: Profile, pane: PaneView?) {
         removal = DataStoreRemoval(profile.store)
         store = WeakBox(profile.store)
-        paneCount = panes.count
         var objects: [(name: String, box: WeakBox)] = [("profile", WeakBox(profile))]
-        if let workspace { objects.append(("workspace", WeakBox(workspace))) }
         var pids: [pid_t] = []
-        for (index, pane) in panes.enumerated() {
-            objects.append(("pane \(index + 1)", WeakBox(pane)))
-            objects.append(("web view \(index + 1)", WeakBox(pane.webView)))
-            if let pid = MemoryProbe.pid(of: pane.webView, "_webProcessIdentifier"), !pids.contains(pid) {
-                pids.append(pid)
-            }
+        if let pane {
+            objects.append(("pane", WeakBox(pane)))
+            objects.append(("web view", WeakBox(pane.webView)))
+            if let pid = MemoryProbe.pid(of: pane.webView, "_webProcessIdentifier") { pids.append(pid) }
         }
         xspaceObjects = objects
         self.pids = pids
     }
 
-    /// XSpace no longer holds the profile, its workspace, its panes or their web views.
+    /// XSpace no longer holds the profile, its pane or its web view.
     var xspaceReleased: Bool { xspaceObjects.allSatisfy { $0.box.object == nil } }
 
     var storeReleased: Bool { store.object == nil }

@@ -2,6 +2,13 @@ import Foundation
 
 // MARK: - Layouts (state.json: "layout")
 
+/// How a split arranges its children: side by side (horizontal) or stacked from top to bottom
+/// (vertical).
+enum SplitAxis: String, Codable {
+    case horizontal
+    case vertical
+}
+
 /// How the window arranges the profiles, one pane each: every profile in a grid (automatic), or a
 /// fixed layout that shows a given number of profiles.
 enum GridPreset: String, Codable, CaseIterable {

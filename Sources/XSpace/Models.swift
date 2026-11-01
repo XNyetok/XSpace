@@ -12,15 +12,18 @@ struct ProfileState: Codable, Equatable {
     var id: UUID
     var name: String
     var colorIndex: Int
-    /// The profile's panes as 0.5.0 shows them. Since workspaces, the panes shown are in the
-    /// workspaces; these are only written for 0.5.0 (see AppStateData.encodedForDisk).
-    var panes: [PaneState]
-    /// Relative pane widths (nil = equal widths), like `panes`.
+    /// The page of the profile's pane.
+    var url: String
+    /// The profile's panes as XSpace 0.5.0 knows them; only written for 0.5.0 (see
+    /// AppStateData.encodedForDisk).
+    var panes: [PaneState] = []
+    /// Pane widths in 0.5.0 (nil = equal widths), like `panes`.
     var splitRatios: [Double]? = nil
 }
 
 extension ProfileState {
-    /// `panes` is only a copy for 0.5.0, so a profile without it can still be read.
+    /// Up to 0.5.0 a profile had panes (AI Studio | Sheets) and no page of its own: it keeps the
+    /// page of its first pane.
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(UUID.self, forKey: .id)
@@ -28,6 +31,7 @@ extension ProfileState {
         colorIndex = try c.decode(Int.self, forKey: .colorIndex)
         panes = try c.decodeIfPresent([PaneState].self, forKey: .panes) ?? []
         splitRatios = try c.decodeIfPresent([Double].self, forKey: .splitRatios)
+        url = try c.decodeIfPresent(String.self, forKey: .url) ?? panes.first?.url ?? Defaults.startURL
     }
 }
 
@@ -64,18 +68,25 @@ enum HibernatePolicy: String, Codable, CaseIterable {
 }
 
 struct AppStateData: Codable {
-    /// 2 added workspaces. A file without them (version 1, or a version 2 file saved again by
-    /// 0.5.0, which keeps the number but drops what it does not know) gets them when it is read.
-    static let currentVersion = 2
+    /// 3: one page per profile, shown in a grid layout. Older files are read too: 1 (0.5.0, with
+    /// panes per profile and the Fokus/Semua mode) and 2 (never released, with workspaces, which
+    /// are ignored). Each profile keeps the page of its first pane.
+    static let currentVersion = 3
 
     var version = AppStateData.currentVersion
-    /// One entry per profile, that is per data store.
+    /// One entry per profile, that is per data store, in toolbar order.
     var profiles: [ProfileState] = []
-    /// What the window shows, in toolbar order.
-    var workspaces: [WorkspaceState] = []
-    var selectedWorkspaceID: UUID?
-    /// The profile 0.5.0 opens with; written for 0.5.0 (see encodedForDisk).
+    var layout: GridPreset = .automatic
+    /// The profile in each slot of each fixed layout, by layout ("oneAndThree": four slots; nil =
+    /// an empty slot). Every layout remembers its profiles.
+    var layoutSlots: [String: [UUID?]] = [:]
+    /// The sizes of each layout: the ratios of its splits, depth first (see sizesKey).
+    var layoutSizes: [String: [[Double]]] = [:]
+    /// The layout that Ctrl-Cmd-G returns to from the single-profile layout.
+    var previousLayout: GridPreset?
+    /// The active profile: the one the single-profile layout shows. Also the profile 0.5.0 opens.
     var selectedProfileID: UUID?
+    /// Written for 0.5.0: whether it shows all profiles (Semua) or the selected one (Fokus).
     var showAll = false
     var hibernatePolicy: HibernatePolicy = .after15Minutes
     /// Data stores whose deletion has not completed yet (retried at launch).
@@ -85,24 +96,21 @@ struct AppStateData: Codable {
 
     private enum LegacyKeys: String, CodingKey { case autoHibernate }
 
-    /// Lenient decoding: missing keys (older versions) fall back to defaults, and the workspaces
-    /// are made to fit the profiles (see normalizeWorkspaces). Workspaces that cannot be read are
-    /// rebuilt from the profiles' panes, so the rest of the state is not lost with them.
+    /// Lenient decoding: missing keys (older versions) fall back to defaults, and the layouts are
+    /// made to fit the profiles (see normalizeLayout). A file without a layout gets the
+    /// single-profile layout, or the automatic one if 0.5.0 showed all profiles.
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         version = try c.decodeIfPresent(Int.self, forKey: .version) ?? 1
         profiles = try c.decodeIfPresent([ProfileState].self, forKey: .profiles) ?? []
-        if let saved = try? c.decodeIfPresent([WorkspaceState].self, forKey: .workspaces) {
-            workspaces = saved
-        } else {
-            // A file from 0.5.0, or saved again by 0.5.0, has no workspaces: every profile becomes
-            // one with its panes. So do workspaces that cannot be read.
-            workspaces = profiles.map(WorkspaceState.init(migrating:))
-        }
-        selectedWorkspaceID = try? c.decodeIfPresent(UUID.self, forKey: .selectedWorkspaceID)
         selectedProfileID = try c.decodeIfPresent(UUID.self, forKey: .selectedProfileID)
         showAll = try c.decodeIfPresent(Bool.self, forKey: .showAll) ?? false
         pendingDeletion = try c.decodeIfPresent([UUID].self, forKey: .pendingDeletion) ?? []
+        let savedLayout = try? c.decodeIfPresent(GridPreset.self, forKey: .layout)
+        layout = savedLayout ?? (showAll ? GridPreset.automatic : GridPreset.single)
+        layoutSlots = (try? c.decodeIfPresent([String: [UUID?]].self, forKey: .layoutSlots)) ?? [:]
+        layoutSizes = (try? c.decodeIfPresent([String: [[Double]]].self, forKey: .layoutSizes)) ?? [:]
+        previousLayout = try? c.decodeIfPresent(GridPreset.self, forKey: .previousLayout)
         if let raw = try? c.decodeIfPresent(String.self, forKey: .hibernatePolicy),
            let policy = HibernatePolicy(rawValue: raw) {
             hibernatePolicy = policy
@@ -115,74 +123,170 @@ struct AppStateData: Codable {
             }
             hibernatePolicy = legacyAuto ? .immediately : .after15Minutes
         }
-        normalizeWorkspaces()
+        normalizeLayout()
     }
 
-    /// Makes the workspaces fit the profiles (see WorkspaceState.normalized) and selects one:
-    /// the one saved, else the one showing the profile 0.5.0 had selected, else the first.
-    mutating func normalizeWorkspaces() {
-        workspaces = WorkspaceState.normalized(workspaces, profiles: profiles)
-        guard !workspaces.contains(where: { $0.id == selectedWorkspaceID }) else { return }
-        let showingSelectedProfile = selectedProfileID.flatMap { id in
-            workspaces.first { $0.root.contains(profile: id) }
+    // MARK: The layout
+
+    /// The profile in each slot of the current layout, in reading order (nil = an empty slot).
+    /// The automatic layout shows every profile, in toolbar order.
+    var shownProfiles: [UUID?] {
+        guard let count = layout.slotCount else { return profiles.map(\.id) }
+        let slots = layoutSlots[layout.rawValue] ?? []
+        return (0..<count).map { $0 < slots.count ? slots[$0] : nil }
+    }
+
+    func isShown(_ id: UUID) -> Bool {
+        shownProfiles.contains(id)
+    }
+
+    /// The arrangement of the current layout.
+    var tree: GridNode {
+        layout.tree(slots: shownProfiles.count)
+    }
+
+    /// Where the current layout's sizes are kept: the automatic layout differs with the number
+    /// of profiles.
+    var sizesKey: String {
+        layout == .automatic ? "\(layout.rawValue)-\(profiles.count)" : layout.rawValue
+    }
+
+    /// Fits the layouts to the profiles: unknown and repeated profiles leave their slot empty. A
+    /// fixed layout without any profile is filled, and the single-profile layout shows the active
+    /// profile, so the window shows something whenever there are profiles.
+    mutating func normalizeLayout() {
+        let known = Set(profiles.map(\.id))
+        for (key, slots) in layoutSlots {
+            var seen = Set<UUID>()
+            layoutSlots[key] = slots.map { id in
+                guard let id, known.contains(id), seen.insert(id).inserted else { return nil }
+                return id
+            }
         }
-        selectedWorkspaceID = (showingSelectedProfile ?? workspaces.first)?.id
+        if let selected = selectedProfileID, !known.contains(selected) { selectedProfileID = nil }
+        if previousLayout == .single { previousLayout = nil }
+        guard let count = layout.slotCount, let first = profiles.first else { return }
+        if layout == .single {
+            let shown: UUID = selectedProfileID ?? (layoutSlots[layout.rawValue]?.first ?? nil) ?? first.id
+            layoutSlots[layout.rawValue] = [shown]
+        } else if !shownProfiles.contains(where: { $0 != nil }) {
+            layoutSlots[layout.rawValue] = Grid.filling(count, shown: [], profiles: profiles.map(\.id),
+                                                        active: selectedProfileID)
+        }
     }
 
-    /// state.json as written to disk: the current format, plus each profile's panes and the
-    /// selected profile in the fields 0.5.0 reads, so going back to 0.5.0 keeps every profile.
+    /// Switches the layout. A fixed layout shows the profiles it showed last time, or the first
+    /// time those shown so far and then the others (see Grid.filling). The single-profile layout
+    /// shows the active profile.
+    mutating func switchLayout(to preset: GridPreset, active: UUID?) {
+        guard preset != layout else { return }
+        let shown = shownProfiles
+        if preset == .single { previousLayout = layout }
+        layout = preset
+        if let active { selectedProfileID = active }
+        guard let count = preset.slotCount else { return }
+        if preset == .single {
+            if let profile = active ?? shown.compactMap({ $0 }).first ?? profiles.first?.id {
+                layoutSlots[preset.rawValue] = [profile]
+            }
+        } else if !shownProfiles.contains(where: { $0 != nil }) {
+            layoutSlots[preset.rawValue] = Grid.filling(count, shown: shown, profiles: profiles.map(\.id), active: active)
+        }
+    }
+
+    /// Shows a profile in `slot`: if it is shown in another slot, the two trade places; otherwise
+    /// it takes the place of the profile there, which is then hidden. It becomes the active profile.
+    mutating func show(_ id: UUID, inSlot slot: Int) {
+        var shown = shownProfiles
+        guard shown.indices.contains(slot), profiles.contains(where: { $0.id == id }) else { return }
+        if let current = shown.firstIndex(of: id) {
+            shown.swapAt(current, slot)
+        } else {
+            shown[slot] = id
+        }
+        setShown(shown)
+        selectedProfileID = id
+    }
+
+    /// The profiles in two slots trade places.
+    mutating func swapSlots(_ a: Int, _ b: Int) {
+        var shown = shownProfiles
+        guard a != b, shown.indices.contains(a), shown.indices.contains(b) else { return }
+        shown.swapAt(a, b)
+        setShown(shown)
+    }
+
+    private mutating func setShown(_ shown: [UUID?]) {
+        if layout == .automatic {
+            // The automatic layout shows the profiles in toolbar order, so that order changes.
+            profiles = shown.compactMap { id in profiles.first { $0.id == id } }
+        } else {
+            layoutSlots[layout.rawValue] = shown
+        }
+    }
+
+    // MARK: Profiles
+
+    /// Adds a profile that opens the start page. A fixed layout shows it in its first empty slot,
+    /// otherwise in `slot` (the pane you are in); the automatic layout shows every profile anyway.
+    /// It becomes the active profile.
+    @discardableResult
+    mutating func addProfile(name: String, colorIndex: Int, inSlot slot: Int) -> ProfileState {
+        let profile = ProfileState(id: UUID(), name: name, colorIndex: colorIndex, url: Defaults.startURL)
+        profiles.append(profile)
+        if layout.slotCount != nil {
+            var shown = shownProfiles
+            shown[shown.firstIndex(of: nil) ?? min(max(slot, 0), shown.count - 1)] = profile.id
+            setShown(shown)
+        }
+        selectedProfileID = profile.id
+        return profile
+    }
+
+    /// Removes a profile. In the current layout, a profile that is not shown takes its slot if
+    /// there is one. Its data store is queued for deletion (see StateStore.removeDataStore).
+    mutating func removeProfile(_ id: UUID) {
+        let slot = shownProfiles.firstIndex(of: id)
+        profiles.removeAll { $0.id == id }
+        for (key, slots) in layoutSlots {
+            layoutSlots[key] = slots.map { $0 == id ? nil : $0 }
+        }
+        if let slot, layout.slotCount != nil {
+            var shown = shownProfiles
+            if let hidden = profiles.first(where: { !shown.contains($0.id) }) {
+                shown[slot] = hidden.id
+                setShown(shown)
+            }
+        }
+        if selectedProfileID == id {
+            selectedProfileID = shownProfiles.compactMap { $0 }.first ?? profiles.first?.id
+        }
+        pendingDeletion.append(id)
+    }
+
+    /// state.json as written to disk: the current format, plus what 0.5.0 reads, so going back to
+    /// 0.5.0 keeps every profile: each with one pane, the active one selected, and Semua unless a
+    /// single profile is shown.
     func encodedForDisk() throws -> Data {
         var written = self
         written.version = Self.currentVersion
-        written.profiles = WorkspaceState.legacyProfiles(profiles, from: workspaces)
-        let selected = workspaces.first { $0.id == selectedWorkspaceID } ?? workspaces.first
-        if let profileID = selected?.root.panes.first?.profileID {
-            written.selectedProfileID = profileID
+        written.profiles = profiles.map { profile in
+            var copy = profile
+            copy.panes = [PaneState(url: profile.url)]
+            copy.splitRatios = nil
+            return copy
         }
+        written.showAll = layout != .single
+        written.selectedProfileID = selectedProfileID ?? shownProfiles.compactMap { $0 }.first
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         return try encoder.encode(written)
     }
-
-    /// Adds a profile with the default panes in a workspace of its own, and selects that workspace.
-    @discardableResult
-    mutating func addProfile(name: String, colorIndex: Int) -> (profile: ProfileState, workspace: WorkspaceState) {
-        let profile = ProfileState(id: UUID(), name: name, colorIndex: colorIndex,
-                                   panes: Defaults.paneURLs.map { PaneState(url: $0) })
-        let workspace = WorkspaceState(defaultFor: profile.id)
-        profiles.append(profile)
-        workspaces.append(workspace)
-        selectedWorkspaceID = workspace.id
-        return (profile, workspace)
-    }
-
-    /// Removes a profile and its panes from every workspace; a workspace left without panes is
-    /// removed too. The profile's data store is queued for deletion (see StateStore.removeDataStore).
-    mutating func removeProfile(_ id: UUID) {
-        profiles.removeAll { $0.id == id }
-        workspaces = workspaces.compactMap { workspace in
-            guard let root = workspace.root.removingPanes(where: { $0.profileID == id }) else { return nil }
-            var kept = workspace
-            kept.root = root
-            return kept
-        }
-        if workspaces.isEmpty {
-            // The other profiles had no panes: each gets a workspace again, so the window is not empty.
-            workspaces = profiles.map(WorkspaceState.init(migrating:))
-        }
-        if !workspaces.contains(where: { $0.id == selectedWorkspaceID }) {
-            selectedWorkspaceID = workspaces.first?.id
-        }
-        pendingDeletion.append(id)
-    }
 }
 
 enum Defaults {
-    /// Panes of every new profile: Google AI Studio | Google Sheets.
-    static let paneURLs = [
-        "https://aistudio.google.com/",
-        "https://docs.google.com/spreadsheets/",
-    ]
+    /// The page a new profile opens: Google AI Studio.
+    static let startURL = "https://aistudio.google.com/"
 }
 
 enum Palette {
@@ -210,7 +314,7 @@ enum Palette {
 
 /// One profile = one persistent WKWebsiteDataStore, so cookies, localStorage, IndexedDB,
 /// cache and service workers are fully separate from every other profile. The store is
-/// created once per profile and shared by all of its panes and popups.
+/// created once per profile and shared by its pane and its popups.
 @MainActor
 final class Profile {
     let id: UUID
@@ -296,12 +400,6 @@ final class StateStore {
     func updateProfile(_ id: UUID, _ change: (inout ProfileState) -> Void) {
         guard let index = data.profiles.firstIndex(where: { $0.id == id }) else { return }
         change(&data.profiles[index])
-        scheduleSave()
-    }
-
-    func updateWorkspace(_ id: UUID, _ change: (inout WorkspaceState) -> Void) {
-        guard let index = data.workspaces.firstIndex(where: { $0.id == id }) else { return }
-        change(&data.workspaces[index])
         scheduleSave()
     }
 

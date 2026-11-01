@@ -1,18 +1,34 @@
 import XCTest
 @testable import XSpace
 
-/// Reading and writing state.json, including files written by older versions.
+/// Reading and writing state.json, including files written by older versions, and the changes to
+/// the profiles and the layout.
 final class SavedStateTests: XCTestCase {
+    private let aiStudio = "https://aistudio.google.com/"
+    private let sheets = "https://docs.google.com/spreadsheets/"
+
     private func decode(_ json: String) throws -> AppStateData {
         try JSONDecoder().decode(AppStateData.self, from: Data(json.utf8))
+    }
+
+    /// Profiles named "Akun 1", "Akun 2", … in the automatic layout.
+    private func state(profiles count: Int) -> AppStateData {
+        var state = AppStateData()
+        for index in 0..<count {
+            state.addProfile(name: "Akun \(index + 1)", colorIndex: index, inSlot: 0)
+        }
+        return state
+    }
+
+    private func ids(_ state: AppStateData) -> [UUID] {
+        state.profiles.map(\.id)
     }
 
     func testMissingKeysFallBackToDefaults() throws {
         let state = try decode("{}")
         XCTAssertEqual(state.version, 1)
         XCTAssertTrue(state.profiles.isEmpty)
-        XCTAssertTrue(state.workspaces.isEmpty)
-        XCTAssertNil(state.selectedWorkspaceID)
+        XCTAssertEqual(state.layout, .single, "0.5.0 without showAll: Fokus")
         XCTAssertNil(state.selectedProfileID)
         XCTAssertFalse(state.showAll)
         XCTAssertEqual(state.hibernatePolicy, .after15Minutes)
@@ -27,35 +43,6 @@ final class SavedStateTests: XCTestCase {
 
     func testUnknownPolicyFallsBackToDefault() throws {
         XCTAssertEqual(try decode(#"{"hibernatePolicy": "sometimes"}"#).hibernatePolicy, .after15Minutes)
-    }
-
-    func testProfileWithoutSplitRatiosDecodes() throws {
-        let state = try decode("""
-            {"profiles": [{"id": "6B1F0C9E-5A7D-4E1B-9C2A-58F3D0A1B2C3", "name": "Akun 1",
-                           "colorIndex": 0, "panes": [{"url": "https://aistudio.google.com/"}]}]}
-            """)
-        XCTAssertEqual(state.profiles.count, 1)
-        XCTAssertEqual(state.profiles[0].panes, [PaneState(url: "https://aistudio.google.com/")])
-        XCTAssertNil(state.profiles[0].splitRatios)
-    }
-
-    func testRoundTrip() throws {
-        var state = AppStateData()
-        let id = UUID()
-        state.profiles = [ProfileState(id: id, name: "Akun 1", colorIndex: 3,
-                                       panes: Defaults.paneURLs.map { PaneState(url: $0) },
-                                       splitRatios: [0.4, 0.6])]
-        state.selectedProfileID = id
-        state.showAll = true
-        state.hibernatePolicy = .memoryPressureOnly
-        state.pendingDeletion = [UUID()]
-
-        let decoded = try JSONDecoder().decode(AppStateData.self, from: JSONEncoder().encode(state))
-        XCTAssertEqual(decoded.profiles, state.profiles)
-        XCTAssertEqual(decoded.selectedProfileID, id)
-        XCTAssertTrue(decoded.showAll)
-        XCTAssertEqual(decoded.hibernatePolicy, .memoryPressureOnly)
-        XCTAssertEqual(decoded.pendingDeletion, state.pendingDeletion)
     }
 
     func testHibernatePolicies() {
@@ -77,174 +64,204 @@ final class SavedStateTests: XCTestCase {
         XCTAssertNotNil(Palette.color(Int.max))
     }
 
-    // MARK: Workspaces (version 2)
+    // MARK: Older files
 
-    private let aiStudio = "https://aistudio.google.com/"
-    private let sheets = "https://docs.google.com/spreadsheets/"
-
-    private func pane(_ profile: UUID, _ url: String) -> LayoutNode {
-        .pane(LayoutPane(id: UUID(), profileID: profile, url: url))
-    }
-
-    /// Two profiles from 0.5.0, a workspace with both, and that workspace selected.
-    private func stateWithAMixedWorkspace() -> (state: AppStateData, first: UUID, second: UUID, mixed: UUID) {
-        var state = AppStateData()
-        let first = state.addProfile(name: "Akun 1", colorIndex: 0).profile.id
-        let second = state.addProfile(name: "Akun 2", colorIndex: 1).profile.id
-        let mixed = WorkspaceState(id: UUID(), name: "Riset", root: .split(LayoutSplit(
-            id: UUID(), axis: .horizontal,
-            children: [pane(second, "https://b.example/"), pane(first, "https://a.example/")], ratios: [0.6, 0.4])))
-        state.workspaces.append(mixed)
-        state.selectedWorkspaceID = mixed.id
-        return (state, first, second, mixed.id)
-    }
-
-    func testA050FileGetsAWorkspacePerProfile() throws {
+    func testA050FileInFokusModeShowsTheSelectedProfile() throws {
         let (first, second) = (UUID(), UUID())
         let state = try decode("""
-            {"version": 1, "selectedProfileID": "\(second)", "profiles": [
+            {"version": 1, "selectedProfileID": "\(second)", "showAll": false, "profiles": [
               {"id": "\(first)", "name": "Akun 1", "colorIndex": 0, "splitRatios": [0.3, 0.7],
-               "panes": [{"url": "\(aiStudio)"}, {"url": "\(sheets)"}]},
+               "panes": [{"url": "\(sheets)"}, {"url": "\(aiStudio)"}]},
               {"id": "\(second)", "name": "Akun 2", "colorIndex": 1,
-               "panes": [{"url": "\(sheets)"}, {"url": "\(aiStudio)"}]}]}
+               "panes": [{"url": "\(aiStudio)"}, {"url": "\(sheets)"}]}]}
             """)
-        XCTAssertEqual(state.workspaces.count, 2)
-        XCTAssertEqual(state.workspaces.map { $0.root.panes.map(\.profileID) }, [[first, first], [second, second]])
-        XCTAssertEqual(state.workspaces.map { $0.root.panes.map(\.url) }, [[aiStudio, sheets], [sheets, aiStudio]])
-        guard case .split(let firstRoot) = state.workspaces[0].root else { return XCTFail("expected panes side by side") }
-        XCTAssertEqual(firstRoot.ratios, [0.3, 0.7])
-        XCTAssertEqual(state.selectedWorkspaceID, state.workspaces[1].id, "the profile 0.5.0 had selected")
+        XCTAssertEqual(state.profiles.map(\.url), [sheets, aiStudio], "every profile keeps the page of its first pane")
+        XCTAssertEqual(state.layout, .single)
+        XCTAssertEqual(state.shownProfiles, [second])
+        XCTAssertEqual(state.selectedProfileID, second)
     }
 
-    func testAddingAProfileGivesItAWorkspace() {
-        var state = AppStateData()
-        let added = state.addProfile(name: "Akun 1", colorIndex: 0)
-        XCTAssertEqual(state.profiles, [added.profile])
-        XCTAssertEqual(state.workspaces, [added.workspace])
-        XCTAssertEqual(state.selectedWorkspaceID, added.workspace.id)
-        XCTAssertEqual(added.workspace.root.panes.map(\.url), Defaults.paneURLs)
-        XCTAssertEqual(Set(added.workspace.root.panes.map(\.profileID)), [added.profile.id])
+    func testA050FileInSemuaModeShowsEveryProfile() throws {
+        let (first, second) = (UUID(), UUID())
+        let state = try decode("""
+            {"showAll": true, "profiles": [
+              {"id": "\(first)", "name": "Akun 1", "colorIndex": 0, "panes": [{"url": "\(aiStudio)"}]},
+              {"id": "\(second)", "name": "Akun 2", "colorIndex": 1, "panes": []}]}
+            """)
+        XCTAssertEqual(state.layout, .automatic)
+        XCTAssertEqual(state.shownProfiles, [first, second])
+        XCTAssertEqual(state.profiles.map(\.url), [aiStudio, Defaults.startURL], "a profile without panes opens the start page")
     }
 
-    func testWorkspacesSurviveARoundTrip() throws {
-        var (state, _, _, _) = stateWithAMixedWorkspace()
-        state.showAll = true
+    /// Version 2 was never released, but its files exist: the workspaces are left out, and the
+    /// profiles' panes (written for 0.5.0) give each profile its page.
+    func testAVersion2FileKeepsTheProfilesPages() throws {
+        let id = UUID()
+        let state = try decode("""
+            {"version": 2, "showAll": false, "selectedProfileID": "\(id)", "workspaces": [{"id": "x"}],
+             "selectedWorkspaceID": "\(UUID())", "profiles": [
+              {"id": "\(id)", "name": "Akun 1", "colorIndex": 0, "panes": [{"url": "https://a.example/"}, {"url": "\(sheets)"}]}]}
+            """)
+        XCTAssertEqual(state.profiles.map(\.url), ["https://a.example/"])
+        XCTAssertEqual(state.shownProfiles, [id])
+        let written = String(decoding: try state.encodedForDisk(), as: UTF8.self)
+        XCTAssertFalse(written.contains("workspaces"))
+    }
+
+    // MARK: Writing
+
+    func testTheStateSurvivesARoundTrip() throws {
+        var state = state(profiles: 3)
+        state.switchLayout(to: .oneAndThree, active: nil)
+        state.layoutSizes["oneAndThree"] = [[0.6, 0.4], [1, 1, 2]]
+        state.hibernatePolicy = .memoryPressureOnly
+        state.pendingDeletion = [UUID()]
+        state.profiles[1].url = "https://b.example/"
+
         let decoded = try JSONDecoder().decode(AppStateData.self, from: state.encodedForDisk())
         XCTAssertEqual(decoded.version, AppStateData.currentVersion)
-        XCTAssertEqual(decoded.workspaces, state.workspaces)
-        XCTAssertEqual(decoded.selectedWorkspaceID, state.selectedWorkspaceID)
-        XCTAssertTrue(decoded.showAll)
+        XCTAssertEqual(decoded.profiles.map(\.url), state.profiles.map(\.url))
+        XCTAssertEqual(decoded.layout, .oneAndThree)
+        XCTAssertEqual(decoded.shownProfiles, state.shownProfiles)
+        XCTAssertEqual(decoded.layoutSizes, state.layoutSizes)
+        XCTAssertEqual(decoded.previousLayout, nil)
+        XCTAssertEqual(decoded.hibernatePolicy, .memoryPressureOnly)
+        XCTAssertEqual(decoded.pendingDeletion, state.pendingDeletion)
     }
 
     func testTheSavedFileStaysReadableFor050() throws {
-        var (state, first, second, _) = stateWithAMixedWorkspace()
-        state.workspaces[0].root = state.workspaces[0].root.updatingSplit(splitID(of: state.workspaces[0])) {
-            $0.ratios = [0.7, 0.3]
-            $0.swapChildren(at: 0)
-        }
+        var state = state(profiles: 2)
+        state.profiles[0].url = "https://a.example/"
         let legacy = try JSONDecoder().decode(Legacy050State.self, from: state.encodedForDisk())
-        XCTAssertEqual(legacy.profiles.map(\.id), [first, second])
-        XCTAssertEqual(legacy.profiles[0].panes.map(\.url), [sheets, aiStudio], "the swapped order")
-        XCTAssertEqual(legacy.profiles[0].splitRatios, [0.3, 0.7])
-        XCTAssertEqual(legacy.profiles[1].panes.map(\.url), Defaults.paneURLs)
-        XCTAssertEqual(legacy.selectedProfileID, second, "the profile in the selected workspace's first pane")
+        XCTAssertEqual(legacy.profiles.map(\.id), ids(state))
+        XCTAssertEqual(legacy.profiles.map { $0.panes.map(\.url) }, [["https://a.example/"], [Defaults.startURL]],
+                       "one pane per profile")
+        XCTAssertTrue(legacy.showAll, "more than one profile on screen: Semua")
+        XCTAssertEqual(legacy.selectedProfileID, state.selectedProfileID)
+
+        state.switchLayout(to: .single, active: state.profiles[0].id)
+        let fokus = try JSONDecoder().decode(Legacy050State.self, from: state.encodedForDisk())
+        XCTAssertFalse(fokus.showAll)
+        XCTAssertEqual(fokus.selectedProfileID, state.profiles[0].id)
     }
 
-    /// 0.5.0 saves the file again without the keys it does not know, but keeps "version": 2.
+    /// 0.5.0 saves the file again without the keys it does not know, but keeps "version": 3.
     func testGoingBackTo050AndForwardAgainKeepsEveryProfile() throws {
-        var state = AppStateData()
-        let first = state.addProfile(name: "Akun 1", colorIndex: 0)
-        let second = state.addProfile(name: "Akun 2", colorIndex: 1)
-        state.workspaces[0].root = state.workspaces[0].root.updatingSplit(splitID(of: first.workspace)) {
-            $0.ratios = [0.25, 0.75]
-        }
-        state.selectedWorkspaceID = first.workspace.id
-
-        let legacy = try JSONDecoder().decode(Legacy050State.self, from: state.encodedForDisk())
-        let savedBy050 = try JSONEncoder().encode(legacy)
-        XCTAssertFalse(String(decoding: savedBy050, as: UTF8.self).contains("workspaces"))
+        var state = state(profiles: 3)
+        state.profiles[2].url = "https://c.example/"
+        state.switchLayout(to: .single, active: state.profiles[2].id)
+        let savedBy050 = try JSONEncoder().encode(JSONDecoder().decode(Legacy050State.self, from: state.encodedForDisk()))
         let reread = try JSONDecoder().decode(AppStateData.self, from: savedBy050)
-
-        XCTAssertEqual(reread.version, 2)
-        XCTAssertEqual(reread.profiles.map(\.id), [first.profile.id, second.profile.id])
-        XCTAssertEqual(reread.workspaces.map { $0.root.panes.map(\.profileID) },
-                       state.workspaces.map { $0.root.panes.map(\.profileID) })
-        XCTAssertEqual(reread.workspaces.map { $0.root.panes.map(\.url) }, state.workspaces.map { $0.root.panes.map(\.url) })
-        guard case .split(let root) = reread.workspaces[0].root else { return XCTFail("expected panes side by side") }
-        XCTAssertEqual(root.ratios, [0.25, 0.75])
-        XCTAssertEqual(reread.selectedWorkspaceID, reread.workspaces[0].id)
+        XCTAssertEqual(reread.version, 3)
+        XCTAssertEqual(ids(reread), ids(state))
+        XCTAssertEqual(reread.profiles.map(\.url), state.profiles.map(\.url))
+        XCTAssertEqual(reread.layout, .single)
+        XCTAssertEqual(reread.shownProfiles, [state.profiles[2].id])
     }
 
-    func testWorkspacesThatCannotBeReadAreRebuiltFromTheProfiles() throws {
-        let id = UUID()
+    // MARK: Layouts and profiles
+
+    func testUnknownAndRepeatedProfilesLeaveTheirSlotEmpty() throws {
+        let (first, second) = (UUID(), UUID())
         let state = try decode("""
-            {"version": 2, "workspaces": [{"id": "not a workspace"}], "profiles": [
-              {"id": "\(id)", "name": "Akun 1", "colorIndex": 0,
-               "panes": [{"url": "https://a.example/"}, {"url": "https://b.example/"}]}]}
+            {"layout": "twoByTwo", "layoutSlots": {"twoByTwo": ["\(first)", "\(UUID())", "\(first)", "\(second)"]},
+             "profiles": [{"id": "\(first)", "name": "Akun 1", "colorIndex": 0, "url": "\(aiStudio)"},
+                          {"id": "\(second)", "name": "Akun 2", "colorIndex": 1, "url": "\(aiStudio)"}]}
             """)
-        XCTAssertEqual(state.profiles.map(\.id), [id])
-        XCTAssertEqual(state.workspaces.map { $0.root.panes.map(\.url) }, [["https://a.example/", "https://b.example/"]])
-        XCTAssertEqual(state.selectedWorkspaceID, state.workspaces.first?.id)
+        XCTAssertEqual(state.shownProfiles, [first, nil, nil, second])
     }
 
-    func testAProfileWithoutPanesStillReads() throws {
-        let id = UUID()
-        let state = try decode(#"{"profiles": [{"id": "\#(id)", "name": "Akun 1", "colorIndex": 0}]}"#)
-        XCTAssertEqual(state.profiles.map(\.id), [id])
-        XCTAssertEqual(state.workspaces.map { $0.root.panes.map(\.url) }, [Defaults.paneURLs])
-    }
-
-    func testRemovingAProfileRemovesItsPanesEverywhere() {
-        var (state, first, second, mixed) = stateWithAMixedWorkspace()
-        let secondWorkspace = state.workspaces[1].id
-        state.selectedWorkspaceID = state.workspaces[0].id
-        state.removeProfile(first)
-        XCTAssertEqual(state.profiles.map(\.id), [second])
-        XCTAssertEqual(state.workspaces.map(\.id), [secondWorkspace, mixed], "its own workspace is gone, the mixed one stays")
-        XCTAssertEqual(state.workspaces[1].root.panes.map(\.profileID), [second])
-        XCTAssertEqual(state.selectedWorkspaceID, secondWorkspace, "the first remaining workspace")
-        XCTAssertEqual(state.pendingDeletion, [first])
-    }
-
-    /// A profile whose panes all show other profiles now (see WorkspaceState.normalized).
-    func testAProfileWithoutPanesStaysWithoutAWorkspace() throws {
-        var state = AppStateData()
-        let first = state.addProfile(name: "Akun 1", colorIndex: 0)
-        let second = state.addProfile(name: "Akun 2", colorIndex: 1)
-        state.workspaces.removeAll { $0.id == second.workspace.id }
-        state.selectedWorkspaceID = first.workspace.id
-        let written = try state.encodedForDisk()
-
-        let decoded = try JSONDecoder().decode(AppStateData.self, from: written)
-        XCTAssertEqual(decoded.profiles.map(\.id), [first.profile.id, second.profile.id])
-        XCTAssertEqual(decoded.workspaces.map(\.id), [first.workspace.id])
-        let legacy = try JSONDecoder().decode(Legacy050State.self, from: written)
-        XCTAssertEqual(legacy.profiles[1].panes.map(\.url), Defaults.paneURLs, "0.5.0 still shows it")
-    }
-
-    func testWithoutWorkspacesEveryProfileGetsOneAgain() throws {
-        let id = UUID()
+    func testAFixedLayoutWithoutProfilesIsFilled() throws {
+        let (first, second) = (UUID(), UUID())
         let state = try decode("""
-            {"version": 2, "workspaces": [], "profiles": [
-              {"id": "\(id)", "name": "Akun 1", "colorIndex": 0, "panes": [{"url": "https://a.example/"}]}]}
+            {"layout": "oneAndTwo", "layoutSlots": {"oneAndTwo": [null, "\(UUID())"]},
+             "profiles": [{"id": "\(first)", "name": "Akun 1", "colorIndex": 0, "url": "\(aiStudio)"},
+                          {"id": "\(second)", "name": "Akun 2", "colorIndex": 1, "url": "\(aiStudio)"}]}
             """)
-        XCTAssertEqual(state.workspaces.map { $0.root.panes.map(\.url) }, [["https://a.example/"]])
-        XCTAssertEqual(state.selectedWorkspaceID, state.workspaces.first?.id)
+        XCTAssertEqual(state.shownProfiles, [first, second, nil])
     }
 
-    func testDeletingTheOnlyProfileWithPanesGivesTheOthersAWorkspace() {
-        var state = AppStateData()
-        let first = state.addProfile(name: "Akun 1", colorIndex: 0)
-        let second = state.addProfile(name: "Akun 2", colorIndex: 1)
-        state.workspaces.removeAll { $0.id == second.workspace.id }
-        state.removeProfile(first.profile.id)
-        XCTAssertEqual(state.workspaces.map { $0.root.panes.map(\.profileID) }, [[second.profile.id, second.profile.id]])
-        XCTAssertEqual(state.selectedWorkspaceID, state.workspaces.first?.id)
+    func testAnUnknownLayoutFallsBackToOneOfTheKnownOnes() throws {
+        XCTAssertEqual(try decode(#"{"layout": "hexagons", "showAll": true}"#).layout, .automatic)
+        XCTAssertEqual(try decode(#"{"layout": "hexagons"}"#).layout, .single)
     }
 
-    private func splitID(of workspace: WorkspaceState) -> UUID {
-        guard case .split(let split) = workspace.root else { return UUID() }
-        return split.id
+    func testTheAutomaticLayoutShowsEveryProfileInToolbarOrder() {
+        let state = state(profiles: 3)
+        XCTAssertEqual(state.layout, .automatic)
+        XCTAssertEqual(state.shownProfiles, ids(state).map { $0 })
+        XCTAssertEqual(state.sizesKey, "automatic-3", "its sizes depend on the number of profiles")
+    }
+
+    func testSwitchingToAFixedLayoutTheFirstTime() {
+        var state = state(profiles: 3)
+        let (a, b, c) = (state.profiles[0].id, state.profiles[1].id, state.profiles[2].id)
+        state.switchLayout(to: .twoColumns, active: c)
+        XCTAssertEqual(state.shownProfiles, [a, c], "the profiles shown, the active one kept")
+        XCTAssertEqual(state.selectedProfileID, c)
+        state.switchLayout(to: .oneAndThree, active: c)
+        XCTAssertEqual(state.shownProfiles, [a, c, b, nil], "then the others; an empty slot is left")
+    }
+
+    func testEveryLayoutRemembersItsProfiles() {
+        var state = state(profiles: 3)
+        let (a, b, c) = (state.profiles[0].id, state.profiles[1].id, state.profiles[2].id)
+        state.switchLayout(to: .twoColumns, active: nil)
+        state.show(c, inSlot: 1)
+        XCTAssertEqual(state.shownProfiles, [a, c])
+        state.switchLayout(to: .single, active: a)
+        XCTAssertEqual(state.shownProfiles, [a], "the single-profile layout shows the active profile")
+        XCTAssertEqual(state.previousLayout, .twoColumns)
+        state.switchLayout(to: .twoColumns, active: b)
+        XCTAssertEqual(state.shownProfiles, [a, c], "as it was")
+    }
+
+    func testShowingAProfileInASlot() {
+        var state = state(profiles: 3)
+        let (a, b, c) = (state.profiles[0].id, state.profiles[1].id, state.profiles[2].id)
+        state.switchLayout(to: .twoColumns, active: nil)
+        XCTAssertEqual(state.shownProfiles, [a, b])
+        state.show(c, inSlot: 0)
+        XCTAssertEqual(state.shownProfiles, [c, b], "a profile that is not shown takes the place")
+        XCTAssertEqual(state.selectedProfileID, c)
+        state.show(b, inSlot: 0)
+        XCTAssertEqual(state.shownProfiles, [b, c], "a profile shown elsewhere trades places")
+        state.show(UUID(), inSlot: 0)
+        state.show(a, inSlot: 5)
+        XCTAssertEqual(state.shownProfiles, [b, c], "unknown profiles and slots change nothing")
+    }
+
+    func testTheAutomaticLayoutChangesTheToolbarOrderWhenProfilesTradePlaces() {
+        var state = state(profiles: 3)
+        let (a, b, c) = (state.profiles[0].id, state.profiles[1].id, state.profiles[2].id)
+        state.swapSlots(0, 2)
+        XCTAssertEqual(ids(state), [c, b, a])
+        state.show(c, inSlot: 1)
+        XCTAssertEqual(ids(state), [b, c, a])
+    }
+
+    func testANewProfileGoesToAnEmptySlotOrTheGivenOne() {
+        var state = state(profiles: 1)
+        state.switchLayout(to: .twoColumns, active: nil)
+        let second = state.addProfile(name: "Akun 2", colorIndex: 1, inSlot: 0)
+        XCTAssertEqual(state.shownProfiles, [state.profiles[0].id, second.id], "the empty slot")
+        let third = state.addProfile(name: "Akun 3", colorIndex: 2, inSlot: 0)
+        XCTAssertEqual(state.shownProfiles, [third.id, second.id], "no empty slot: the given one")
+        XCTAssertEqual(state.selectedProfileID, third.id)
+        XCTAssertEqual(third.url, Defaults.startURL)
+    }
+
+    func testDeletingAProfileGivesItsPlaceToOneThatIsHidden() {
+        var state = state(profiles: 3)
+        let (a, b, c) = (state.profiles[0].id, state.profiles[1].id, state.profiles[2].id)
+        state.switchLayout(to: .twoColumns, active: nil)
+        state.selectedProfileID = b
+        state.removeProfile(b)
+        XCTAssertEqual(state.shownProfiles, [a, c])
+        XCTAssertEqual(state.selectedProfileID, a)
+        XCTAssertEqual(state.pendingDeletion, [b])
+        state.removeProfile(c)
+        XCTAssertEqual(state.shownProfiles, [a, nil], "no hidden profile left: the slot stays empty")
     }
 }
 
