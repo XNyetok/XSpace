@@ -6,6 +6,11 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+- If XSpace cannot read its saved state (`state.json`), for example because the file is damaged,
+  it now moves the file aside as `state-unreadable-<date>.json` before starting over. Before, it
+  overwrote the file, and the profiles in it could no longer be opened.
+
 ## [0.5.0] - 2026-11-01
 
 ### Changed

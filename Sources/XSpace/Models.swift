@@ -157,12 +157,32 @@ final class StateStore {
         }
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         fileURL = directory.appendingPathComponent("state.json")
+        data = Self.load(from: fileURL)
+    }
+
+    /// Reads state.json. A file that exists but cannot be read (damaged, or not understood) is
+    /// moved aside as state-unreadable-<date>.json, so the new state XSpace then starts with does
+    /// not overwrite it: the profiles in it, and with them their website data, stay recoverable.
+    nonisolated static func load(from fileURL: URL, now: Date = Date()) -> AppStateData {
+        let manager = FileManager.default
+        guard manager.fileExists(atPath: fileURL.path) else { return AppStateData() }
         if let raw = try? Data(contentsOf: fileURL),
            let decoded = try? JSONDecoder().decode(AppStateData.self, from: raw) {
-            data = decoded
-        } else {
-            data = AppStateData()
+            return decoded
         }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyyMMdd-HHmmss"
+        let backup = fileURL.deletingLastPathComponent()
+            .appendingPathComponent("state-unreadable-\(formatter.string(from: now)).json")
+        do {
+            try manager.moveItem(at: fileURL, to: backup)
+            NSLog("XSpace: could not read %@; moved it to %@ and started with a new state",
+                  fileURL.lastPathComponent, backup.lastPathComponent)
+        } catch {
+            NSLog("XSpace: could not read %@ or move it aside (%@)", fileURL.lastPathComponent, error.localizedDescription)
+        }
+        return AppStateData()
     }
 
     func scheduleSave() {
