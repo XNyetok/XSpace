@@ -7,7 +7,7 @@ cookies, logins and website data, completely separate from the other profiles. A
 setup: Google AI Studio next to Google Sheets, for several Google accounts, without the
 accounts ever mixing and without a pile of browser windows spread across Spaces.
 
-> **Status:** early prototype (v0.3). macOS 14+. The app UI is in Indonesian for now —
+> **Status:** early prototype (v0.3). macOS 26+. The app UI is in Indonesian for now —
 > localization is planned and contributions are welcome.
 >
 > 🇮🇩 Baca dalam Bahasa Indonesia: [README.id.md](README.id.md)
@@ -36,9 +36,10 @@ accounts ever mixing and without a pile of browser windows spread across Spaces.
 
 ## Requirements
 
-- macOS 14 Sonoma or later. CI covers macOS 15 and 26; macOS 14 is supported but no longer
-  tested automatically, because GitHub retired its macOS 14 runners.
-- To build: Xcode 16 or later (or the Command Line Tools with Swift 5.10+)
+- macOS 26 Tahoe or later. On macOS 14 and 15, use
+  [XSpace 0.4.0](https://github.com/XNyetok/XSpace/releases/tag/v0.4.0), the last version that
+  supports them.
+- To build: Xcode 26 or later (or its Command Line Tools)
 
 ## Install
 
@@ -47,11 +48,8 @@ unzip it and move **XSpace.app** to Applications. Release builds run on Apple si
 Macs.
 
 Releases are not notarized by Apple yet (that needs a paid Developer ID), so macOS blocks the
-first launch:
-
-- **macOS 15 and later:** open XSpace, click **Done** in the warning, then open **System
-  Settings → Privacy & Security** and click **Open Anyway** next to the message about XSpace.
-- **macOS 14:** Control-click XSpace.app in Finder, choose **Open**, then **Open** again.
+first launch: open XSpace, click **Done** in the warning, then open **System Settings → Privacy &
+Security** and click **Open Anyway** next to the message about XSpace.
 
 Release builds are ad-hoc signed, so after an update macOS may ask whether XSpace may access
 its data: choose **Allow**, or your profiles will not be available. Building XSpace yourself with
@@ -141,7 +139,7 @@ $APP --selftest-ui         # real window with throwaway state: freezing + RAM in
 
 All self-tests use their own throwaway profiles and never touch your real ones. Set
 `XSPACE_SELFTEST_OFFLINE=1` to skip the parts that need the network. CI runs all of the above
-(offline) on macOS 15 and 26 and treats compiler warnings as errors;
+(offline) on macOS 26 and treats compiler warnings as errors;
 `XSPACE_WARNINGS_AS_ERRORS=1 ./scripts/build.sh` does the same locally.
 
 | File | Contents |

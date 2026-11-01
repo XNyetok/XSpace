@@ -13,7 +13,7 @@ permissions:
 jobs:
   release:
     name: Build and publish
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 30
     env:
       XSPACE_SELFTEST_OFFLINE: "1"
@@ -76,7 +76,7 @@ jobs:
             echo "---"
             echo
             echo "**Install:** download \`XSpace-$VERSION.zip\`, unzip it and move XSpace.app to Applications" \
-              "(macOS 14 or later, Apple silicon and Intel). Releases are not notarized yet, so the first" \
+              "(macOS 26 or later, Apple silicon and Intel). Releases are not notarized yet, so the first" \
               "launch needs one extra step: see [Install]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY#install)."
           } >> build/notes.md
           cat build/notes.md

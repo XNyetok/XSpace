@@ -18,7 +18,7 @@ These keep XSpace what it is. Changes that break them are unlikely to be merged.
 
 ## Development setup
 
-- macOS 14 or later, Xcode 16 or later.
+- macOS 26 or later, Xcode 26 or later.
 - Build and run:
 
   ```bash
@@ -44,7 +44,7 @@ $APP --selftest-ui                               # freezing + RAM indicator (ope
 ```
 
 The self-tests use throwaway profiles and never touch your own. CI runs all of the above on
-macOS 15 and 26, with `XSPACE_SELFTEST_OFFLINE=1`. If you fix a bug, add a check when it is
+macOS 26, with `XSPACE_SELFTEST_OFFLINE=1`. If you fix a bug, add a check when it is
 practical: a unit test in `Tests/XSpaceTests/` for logic that needs no web page, a self-test
 check for anything that needs WebKit, the sandbox or a window.
 

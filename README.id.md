@@ -7,7 +7,7 @@ login, dan data situs sendiri yang terpisah total dari profil lain. Contoh pemak
 AI Studio di samping Google Sheets untuk beberapa akun Google sekaligus, tanpa akun saling
 bercampur dan tanpa banyak jendela browser yang tersebar di beberapa Space.
 
-> **Status:** prototype awal (v0.3). macOS 14+.
+> **Status:** prototype awal (v0.3). macOS 26+.
 >
 > 🇬🇧 English: [README.md](README.md)
 
@@ -35,9 +35,10 @@ bercampur dan tanpa banyak jendela browser yang tersebar di beberapa Space.
 
 ## Kebutuhan
 
-- macOS 14 Sonoma atau lebih baru. CI menguji macOS 15 dan 26; macOS 14 tetap didukung tapi
-  tidak lagi diuji otomatis karena GitHub sudah menghentikan runner macOS 14.
-- Untuk build: Xcode 16+ (atau Command Line Tools dengan Swift 5.10+)
+- macOS 26 Tahoe atau lebih baru. Untuk macOS 14 dan 15, pakai
+  [XSpace 0.4.0](https://github.com/XNyetok/XSpace/releases/tag/v0.4.0), versi terakhir yang
+  mendukungnya.
+- Untuk build: Xcode 26+ (atau Command Line Tools-nya)
 
 ## Instal
 
@@ -46,11 +47,8 @@ lalu pindahkan **XSpace.app** ke folder Applications. Build rilis jalan di Mac A
 maupun Intel.
 
 Rilis belum dinotarisasi Apple (butuh Developer ID berbayar), jadi macOS memblokir pembukaan
-pertama:
-
-- **macOS 15 ke atas:** buka XSpace, klik **Selesai** di peringatan, lalu buka **Pengaturan
-  Sistem → Privasi & Keamanan** dan klik **Tetap Buka** di pesan tentang XSpace.
-- **macOS 14:** Control-klik XSpace.app di Finder, pilih **Buka**, lalu **Buka** lagi.
+pertama: buka XSpace, klik **Selesai** di peringatan, lalu buka **Pengaturan Sistem → Privasi &
+Keamanan** dan klik **Tetap Buka** di pesan tentang XSpace.
 
 Build rilis ditandatangani ad-hoc, jadi setelah update macOS bisa bertanya apakah XSpace boleh
 mengakses datanya: pilih **Izinkan**, kalau tidak profil kamu tidak akan muncul. Build sendiri
@@ -142,7 +140,7 @@ $APP --selftest-ui         # jendela sungguhan dengan state sementara: pembekuan
 
 Semua self-test memakai profil uji sementara dan tidak menyentuh profil asli. Set
 `XSPACE_SELFTEST_OFFLINE=1` untuk melewati bagian yang butuh internet. CI menjalankan semuanya
-(offline) di macOS 15 dan 26 dan menganggap warning compiler sebagai error;
+(offline) di macOS 26 dan menganggap warning compiler sebagai error;
 `XSPACE_WARNINGS_AS_ERRORS=1 ./scripts/build.sh` melakukan hal yang sama di lokal.
 
 | File | Isi |

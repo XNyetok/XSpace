@@ -16,14 +16,10 @@ enum WebKitSupport {
                 return version
             }
         }
-        // Safari's Info.plist may be unreadable (sandbox). Since 2025 Safari's version matches
-        // the OS version (Safari 26 on macOS 26, ...); older systems get a matching guess.
+        // Safari's Info.plist may be unreadable (sandbox). Since macOS 26, Safari's version
+        // matches the OS version (Safari 26 on macOS 26, ...).
         let os = ProcessInfo.processInfo.operatingSystemVersion
-        switch os.majorVersion {
-        case 26...: return "\(os.majorVersion).\(os.minorVersion)"
-        case 15: return "18.0"
-        default: return "17.0"
-        }
+        return "\(os.majorVersion).\(os.minorVersion)"
     }()
 
     static var userAgentSuffix: String { "Version/\(safariVersion) Safari/605.1.15" }

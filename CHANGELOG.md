@@ -6,6 +6,10 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Removed
+- Support for macOS 14 and 15: XSpace now requires macOS 26 or later, and CI and release builds
+  run on macOS 26 only. XSpace 0.4.0 remains available for macOS 14 and 15.
+
 ## [0.4.0] - 2026-10-31
 
 ### Added

@@ -19,8 +19,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # The app still supports macOS 14, but GitHub retired its macOS 14 runners.
-        os: [macos-15, macos-26]
+        # XSpace requires macOS 26 or later.
+        os: [macos-26]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     env:

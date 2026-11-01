@@ -348,7 +348,7 @@ final class PaneView: NSView, WKNavigationDelegate, WKUIDelegate {
         let ns = error as NSError
         if ns.domain == NSURLErrorDomain && ns.code == NSURLErrorCancelled { return }
         if ns.domain == "WebKitErrorDomain" && (ns.code == 102 || ns.code == 204) { return } // download / plug-in
-        let failing = (ns.userInfo[NSURLErrorFailingURLStringErrorKey] as? String) ?? webView.url?.absoluteString ?? ""
+        let failing = (ns.userInfo[NSURLErrorFailingURLErrorKey] as? URL)?.absoluteString ?? webView.url?.absoluteString ?? ""
         failedURL = URL(string: failing)
         webView.loadHTMLString(ErrorPage.html(message: ns.localizedDescription, url: failing), baseURL: nil)
         urlField.stringValue = failing

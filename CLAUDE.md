@@ -10,7 +10,7 @@ even while the GitHub repository is private.
 - `Tests/XSpaceTests/`: unit tests
 - `Support/`: Info.plist, entitlements, `AppIcon.icns` (drawn by `scripts/make-icon.swift`)
 - `scripts/build.sh`: builds and signs `build/XSpace.app`
-- `.github/workflows/`: `ci.yml` (macOS 15 and 26), `release.yml` (runs on `v*` tags)
+- `.github/workflows/`: `ci.yml` (macOS 26), `release.yml` (runs on `v*` tags)
 
 ## Ground rules (from CONTRIBUTING.md)
 

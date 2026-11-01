@@ -38,7 +38,7 @@ body:
     id: system
     attributes:
       label: macOS version and Mac
-      placeholder: macOS 15.4, Apple M2, 8 GB RAM
+      placeholder: macOS 26.1, Apple M2, 8 GB RAM
     validations:
       required: true
   - type: dropdown
