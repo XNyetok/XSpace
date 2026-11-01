@@ -153,6 +153,19 @@ final class PaneSplitViewTests: XCTestCase {
         XCTAssertTrue(split.panes.elementsEqual(views, by: ===) && views.allSatisfy { $0.superview === split })
     }
 
+    /// Swapping swaps two panes: there is no button next to a group of stacked panes.
+    @MainActor
+    func testTheSwapButtonOnlySitsBetweenTwoPanes() {
+        let split = PaneSplitView(frame: NSRect(x: 0, y: 0, width: 1012, height: 300))
+        let stack = PaneSplitView()
+        stack.axis = .vertical
+        stack.setPanes([NSView(), NSView()])
+        split.setPanes([NSView(), NSView(), stack])
+        split.layout()
+        XCTAssertEqual(split.swapButtons.map(\.index), [0], "between the two panes, not next to the stack")
+        XCTAssertEqual(split.swapButtons.first?.frame.midX, 336, "on the first divider (333...339)")
+    }
+
     /// One tall pane on the left, three stacked on the right.
     @MainActor
     func testNestedSplitsAreLaidOut() {

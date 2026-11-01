@@ -52,10 +52,12 @@ final class PaneSplitView: NSView {
                 addSubview(divider)
                 dividers.append(divider)
             }
-            // Only between panes side by side, where the button sits in the band of their
-            // toolbars. Added last so they are drawn above the panes they overlap.
+            // Only between two panes side by side, where the button sits in the band of their
+            // toolbars (not next to a group of stacked panes). Added last so they are drawn
+            // above the panes they overlap.
             if axis == .horizontal {
-                for index in 0..<(views.count - 1) {
+                for index in 0..<(views.count - 1)
+                where !(views[index] is PaneSplitView) && !(views[index + 1] is PaneSplitView) {
                     let button = PaneSwapButton()
                     button.owner = self
                     button.index = index
@@ -109,8 +111,8 @@ final class PaneSplitView: NSView {
         }
         // Each swap button sits on its divider, in the band of the panes' toolbars.
         let size = PaneSwapButton.size
-        for (index, button) in swapButtons.enumerated() where index < dividers.count {
-            button.frame = NSRect(x: (dividers[index].frame.midX - size / 2).rounded(),
+        for button in swapButtons where button.index < dividers.count {
+            button.frame = NSRect(x: (dividers[button.index].frame.midX - size / 2).rounded(),
                                   y: (bounds.height - PaneView.toolbarHeight / 2 - size / 2).rounded(),
                                   width: size, height: size)
         }
