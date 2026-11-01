@@ -262,7 +262,9 @@ final class UISelfTest: NSObject, NSApplicationDelegate {
 
         log("\n[9] Clean up")
         var removals = controller.profiles.map { DataStoreRemoval($0.store) }
-        if heldByWebKit, let removal = watch?.removal { removals.append(removal) }
+        // The deleted profile's store is still there if WebKit held it (see the note above) or if
+        // the checks above failed. It belongs to the throwaway state, so it must not stay behind.
+        if stores.contains(third), let removal = watch?.removal { removals.append(removal) }
         controller.testDestroyAll()
         controller.close()
         for removal in removals {
