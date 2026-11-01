@@ -21,10 +21,17 @@ All notable changes to this project are documented here. The format follows
 - **Atur Ulang Ukuran Pane** (⌃⌘0), in the **Tampilan** menu and at the bottom of the **Tata Letak**
   menu, gives the panes of the current layout their default sizes again. The other layouts keep
   their sizes.
+- **Zoom Otomatis**: a pane smaller than a small browser window (1024 × 640 points) shows its page
+  smaller, in steps of 5% down to 70%, so sites keep the layout they have in a browser window
+  instead of switching to the one for tablets or phones. While you drag a divider or resize the
+  window, the zoom waits until you let go. It can be turned off in the **Tampilan** menu.
 
 ### Changed
 - A new profile shows the start page instead of opening Google AI Studio.
 - The last profile can be deleted too: XSpace then shows the welcome screen again.
+- ⌘= and ⌘- zoom the pane you are in from its automatic zoom, in steps of 10%, and the profile
+  keeps its zoom, also when it is frozen and after quitting. ⌘0, now **Atur Ulang Zoom** (formerly
+  **Ukuran Asli**), goes back to the automatic zoom.
 
 ## [0.6.0] - 2026-11-01
 

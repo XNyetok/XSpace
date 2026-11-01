@@ -218,6 +218,24 @@ final class SavedStateTests: XCTestCase {
         XCTAssertEqual(state.layoutSizes, ["twoColumns": [[0.2, 0.8]]])
     }
 
+    func testTheZoomIsSaved() throws {
+        var state = state(profiles: 2)
+        XCTAssertTrue(state.automaticZoom, "automatic by default")
+        state.automaticZoom = false
+        state.profiles[1].zoomOffset = -10
+        let decoded = try JSONDecoder().decode(AppStateData.self, from: state.encodedForDisk())
+        XCTAssertFalse(decoded.automaticZoom)
+        XCTAssertEqual(decoded.profiles.map(\.zoomOffset), [nil, -10])
+
+        let older = try decode(#"{"profiles": [{"id": "\#(UUID())", "name": "Akun 1", "colorIndex": 0}]}"#)
+        XCTAssertTrue(older.automaticZoom, "older files get the automatic zoom")
+        XCTAssertNil(older.profiles.first?.zoomOffset)
+        let odd = try decode(#"{"automaticZoom": "ja", "profiles": [{"id": "\#(UUID())", "name": "Akun 1", "colorIndex": 0, "zoomOffset": "besar"}]}"#)
+        XCTAssertTrue(odd.automaticZoom, "values that cannot be read are left out, not the state")
+        XCTAssertEqual(odd.profiles.count, 1)
+        XCTAssertNil(odd.profiles.first?.zoomOffset)
+    }
+
     func testSwitchingToAFixedLayoutTheFirstTime() {
         var state = state(profiles: 3)
         let (a, b, c) = (state.profiles[0].id, state.profiles[1].id, state.profiles[2].id)

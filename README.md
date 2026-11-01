@@ -28,6 +28,8 @@ mixing and without a pile of browser windows spread across Spaces.
 - One pane per profile, arranged by a layout: **Otomatis** (every profile in a grid), 1, 2 side
   by side, 2 stacked, 3 side by side, 2 × 2, 1 + 2 or 1 + 3. Panes can be resized and swapped,
   and every layout remembers its profiles and sizes
+- Automatic zoom: a small pane shows its page smaller (down to 70%), so websites keep the layout
+  they have in a browser window instead of switching to the one for phones
 - A welcome screen to choose the layout on the first start, and a start page like a browser's new
   tab page, with shortcuts to your sites: nothing loads before you open a page
 - Color-coded profiles and pane borders, so you always know which account you are in
@@ -92,12 +94,28 @@ that. Developer ID signatures also get the secure timestamp that notarization re
 | Rename, recolor or delete a profile | **⋯** button or the **Profil** menu; deleting the last one brings back the welcome screen |
 | Address bar of the focused pane | ⌘L |
 | Reload / back / forward | ⌘R / ⌘[ / ⌘] |
-| Zoom a pane | ⌘= / ⌘- / ⌘0 |
+| Zoom a pane | automatic (see [Zoom](#zoom)); ⌘= / ⌘- zoom the pane you are in further in or out, ⌘0 goes back to the automatic zoom |
 | Resize panes | drag the divider; double-click it to equalize; ⌃⌘0 (**Tampilan → Atur Ulang Ukuran Pane**, also at the bottom of the **Tata Letak** menu) gives the panes of the layout their default sizes again |
 | Memory usage and saving | the **RAM …** indicator, or **Tampilan → Hemat RAM** |
 
 The profile you are in is the one whose pane has the keyboard focus; the commands for a profile
 act on it.
+
+### Zoom
+
+Websites are made for browser windows. A pane smaller than a small browser window (1024 × 640
+points) shows its page smaller, in steps of 5% down to 70%, so the page is laid out as in a
+window instead of switching to its layout for tablets or phones. On a 13-inch MacBook Air, a
+single profile stays at 100% and the panes of the other layouts are at 70%. While you drag a
+divider or resize the window, the zoom waits until you let go of the mouse button.
+
+⌘= and ⌘- make the page of the pane you are in bigger or smaller than that, in steps of 10%; the
+profile keeps this, also when it is frozen and after quitting. ⌘0 (**Tampilan → Atur Ulang
+Zoom**) goes back to the automatic zoom. To show every page at 100%, turn off **Tampilan → Zoom
+Otomatis**.
+
+A smaller zoom does not save CPU: a page uses about as much in a small pane as in a big one.
+What saves CPU and memory is a profile that is not on screen (see below).
 
 ### Memory saving
 
@@ -143,14 +161,14 @@ sign in once per profile; the session is kept.
 ## Development
 
 ```bash
-swift test                 # unit tests: address bar, saved state, layouts, pane splitter, ...
+swift test                 # unit tests: address bar, saved state, layouts, zoom, pane splitter, ...
 APP=build/XSpace.app/Contents/MacOS/XSpace
 $APP --selftest            # profile isolation, Google pages, User-Agent, persistence (write)
 $APP --selftest-persist    # persistence (read back) + cleanup
 $APP --selftest-ui         # real window with throwaway state: upgrading from 0.5.0, freezing,
-                           # layouts, showing and swapping profiles, keyboard focus, RAM
-                           # indicator, deleting a profile, first start (welcome screen, start
-                           # pages, shortcuts)
+                           # layouts and zoom, showing and swapping profiles, keyboard focus,
+                           # RAM indicator, deleting a profile, first start (welcome screen,
+                           # start pages, shortcuts)
 ```
 
 All self-tests use their own throwaway profiles and never touch your real ones. Set
@@ -164,6 +182,7 @@ All self-tests use their own throwaway profiles and never touch your real ones. 
 | `Sources/XSpace/Grid.swift` | layouts: the presets as trees of slots, the automatic grid |
 | `Sources/XSpace/WebKitSupport.swift` | web view configuration, Safari User-Agent, deleting data stores, downloads, error page |
 | `Sources/XSpace/PaneView.swift` | one pane: mini toolbar + `WKWebView` + navigation/UI delegates |
+| `Sources/XSpace/PageZoom.swift` | the zoom of a pane's page: automatic from the size of the pane, plus the profile's own |
 | `Sources/XSpace/StartPageView.swift` | a pane's start page, like a browser's new tab page: search box and shortcuts |
 | `Sources/XSpace/WelcomeView.swift` | the welcome screen on the first start: choosing a layout |
 | `Sources/XSpace/GridView.swift` | the panes in the slots of the layout, hidden panes, empty slots, layout icons and pictures |

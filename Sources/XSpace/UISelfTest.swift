@@ -3,10 +3,10 @@ import Darwin
 import WebKit
 
 /// `XSpace --selftest-ui [shot.png]`: runs the real XSpace window with THROWAWAY state
-/// (temporary folder + new test profiles), checks upgrading from 0.5.0, freezing, the layouts,
-/// showing and swapping profiles, the keyboard focus, the RAM indicator, deleting a profile and
-/// the first start (welcome screen, start pages, shortcuts, Beranda, deleting the last profile), then
-/// deletes everything. Real profiles are never touched. With a .png argument it also saves
+/// (temporary folder + new test profiles), checks upgrading from 0.5.0, freezing, the layouts and
+/// the zoom, showing and swapping profiles, the keyboard focus, the RAM indicator, deleting a
+/// profile and the first start (welcome screen, start pages, shortcuts, Beranda, deleting the last
+/// profile), then deletes everything. Real profiles are never touched. With a .png argument it also saves
 /// snapshots: shot.png of the 1 + 3 layout, shot-welcome.png of the welcome screen and
 /// shot-start.png of the start pages.
 @MainActor
@@ -118,8 +118,9 @@ final class UISelfTest: NSObject, NSApplicationDelegate {
         controller.hibernateIdleProfiles(now: Date().addingTimeInterval(16 * 60))
         check(controller.testPane(second) == nil, "Frozen after 15 minutes off screen")
 
-        log("\n[4] Layouts")
+        log("\n[4] Layouts and zoom")
         await checkLayouts(controller, first: first, second: second)
+        checkZoom(controller)
 
         log("\n[5] Keyboard focus")
         checkKeyboardFocus(controller)
@@ -432,6 +433,57 @@ final class UISelfTest: NSObject, NSApplicationDelegate {
         controller.setLayout(.automatic)
         check(controller.testShown == [first, second, "Uji 3", "Uji 4", "Uji 5"], "Otomatis shows every profile")
         controller.setLayout(.oneAndThree)
+    }
+
+    /// [4], continued: the zoom of every page follows the size of its pane; ⌘+ and ⌘0 change the
+    /// zoom of the pane you are in, which its profile keeps, also when it is frozen; Zoom Otomatis.
+    /// Layout 1 + 3 showing Uji 1–4 with Uji 5 hidden, as checkLayouts leaves it and as it ends.
+    private func checkZoom(_ controller: MainWindowController) {
+        let grid = controller.testGrid
+        func panes() -> [PaneView] { ["Uji 1", "Uji 2", "Uji 3", "Uji 4"].compactMap { controller.testPane($0) } }
+        func automatic(_ pane: PaneView) -> Int { PageZoom.automatic(for: pane.pageArea) }
+        func saved(_ name: String) -> Int? { StateStore.shared.data.profiles.first { $0.name == name }?.zoomOffset }
+        grid.layoutSubtreeIfNeeded()
+        let shown = panes()
+        guard shown.count == 4 else { return check(false, "Zoom: 1 + 3 shows Uji 1–4") }
+        check(shown.allSatisfy { $0.testZoom == automatic($0) } && shown[1].testZoom < 100,
+              "Every page follows the size of its pane (\(shown.map { "\($0.testZoom)%" }.joined(separator: ", ")))")
+
+        controller.window?.makeFirstResponder(shown[1].focusTarget)
+        controller.zoomInPane(nil)
+        check(shown[1].testZoom == automatic(shown[1]) + 10 && shown[2].testZoom == automatic(shown[2])
+              && saved("Uji 2") == 10,
+              "⌘+ zooms in the pane you are in by 10%, and its profile keeps that")
+
+        controller.testSetPolicy(.immediately)
+        controller.testShow("Uji 5")   // in the place of Uji 2, which is frozen
+        let frozen = controller.testPane("Uji 2") == nil
+        controller.testSetPolicy(.after15Minutes)
+        controller.testShow("Uji 2")   // back in its place; Uji 5 stays alive, hidden
+        grid.layoutSubtreeIfNeeded()
+        guard let thawed = controller.testPane("Uji 2") else { return check(false, "Uji 2 is shown again") }
+        check(frozen && thawed !== shown[1] && thawed.testZoom == automatic(thawed) + 10
+              && controller.testShown == ["Uji 1", "Uji 2", "Uji 3", "Uji 4"],
+              "A profile keeps its zoom when it is frozen (\(thawed.testZoom)%)")
+
+        controller.toggleSingleProfile(nil)   // only Uji 2, in the whole window
+        grid.layoutSubtreeIfNeeded()
+        check(controller.testShown == ["Uji 2"] && thawed.testZoom == automatic(thawed) + 10,
+              "The profile's zoom stays on top of the automatic one when the pane grows (\(thawed.testZoom)%)")
+        controller.toggleSingleProfile(nil)
+        grid.layoutSubtreeIfNeeded()
+
+        let toggle = NSMenuItem(title: "", action: #selector(MainWindowController.toggleAutomaticZoom(_:)), keyEquivalent: "")
+        controller.toggleAutomaticZoom(nil)
+        _ = controller.validateMenuItem(toggle)
+        check(panes().map(\.testZoom) == [100, 110, 100, 100] && toggle.state == .off
+              && !StateStore.shared.data.automaticZoom,
+              "Zoom Otomatis off: every page at 100%, plus the profile's own zoom")
+        controller.toggleAutomaticZoom(nil)
+        _ = controller.validateMenuItem(toggle)
+        controller.resetZoomPane(nil)   // ⌘0, with the keyboard focus in Uji 2
+        check(toggle.state == .on && panes().allSatisfy { $0.testZoom == automatic($0) } && saved("Uji 2") == nil,
+              "⌘0 goes back to the automatic zoom")
     }
 
     /// [5]: the keyboard focus never stays in a page that is not on screen. Layout 1 + 3 with

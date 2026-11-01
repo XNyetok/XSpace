@@ -137,7 +137,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         viewMenu.addItem(.separator())
         viewMenu.addItem(item("Perbesar", #selector(PaneView.zoomInPane(_:)), "="))
         viewMenu.addItem(item("Perkecil", #selector(PaneView.zoomOutPane(_:)), "-"))
-        viewMenu.addItem(item("Ukuran Asli", #selector(PaneView.actualSizePane(_:)), "0"))
+        viewMenu.addItem(item("Atur Ulang Zoom", #selector(PaneView.resetZoomPane(_:)), "0"))
+        let automaticZoom = item("Zoom Otomatis", #selector(MainWindowController.toggleAutomaticZoom(_:)), "", [], target: controller)
+        automaticZoom.toolTip = "Zoom halaman di setiap pane mengikuti ukuran pane: makin kecil pane, makin kecil "
+            + "halamannya (paling kecil 70%). ⌘= dan ⌘- menambah atau mengurangi zoom satu pane dari situ."
+        viewMenu.addItem(automaticZoom)
         viewMenu.addItem(.separator())
         viewMenu.addItem(item("Layar Penuh", #selector(NSWindow.toggleFullScreen(_:)), "f", [.command, .control]))
         add(viewMenu, to: mainMenu)

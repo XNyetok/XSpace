@@ -43,6 +43,9 @@ struct ProfileState: Codable, Equatable {
     var url: String?
     /// The shortcuts on the profile's start page, in order.
     var shortcuts: [Shortcut] = []
+    /// The profile's own zoom (⌘+ / ⌘−): percentage points on top of the automatic zoom of its pane
+    /// (see PageZoom); nil for none.
+    var zoomOffset: Int? = nil
     /// The profile's panes as XSpace 0.5.0 knows them; only written for 0.5.0 (see
     /// AppStateData.encodedForDisk).
     var panes: [PaneState] = []
@@ -53,7 +56,7 @@ struct ProfileState: Codable, Equatable {
 extension ProfileState {
     /// Up to 0.5.0 a profile had panes (AI Studio | Sheets) and no page of its own: it keeps the
     /// page of its first pane. An empty address (what 0.5.0 gets for a profile without a page)
-    /// is no page. Shortcuts that cannot be read are left out, not the profile.
+    /// is no page. Shortcuts and a zoom that cannot be read are left out, not the profile.
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(UUID.self, forKey: .id)
@@ -64,6 +67,7 @@ extension ProfileState {
         let page = try c.decodeIfPresent(String.self, forKey: .url) ?? panes.first?.url
         url = page?.isEmpty == false ? page : nil
         shortcuts = (try? c.decodeIfPresent([Shortcut].self, forKey: .shortcuts)) ?? []
+        zoomOffset = try? c.decodeIfPresent(Int.self, forKey: .zoomOffset)
     }
 }
 
@@ -121,6 +125,9 @@ struct AppStateData: Codable {
     /// Written for 0.5.0: whether it shows all profiles (Semua) or the selected one (Fokus).
     var showAll = false
     var hibernatePolicy: HibernatePolicy = .after15Minutes
+    /// Whether the zoom of every page follows the size of its pane (Tampilan → Zoom Otomatis; see
+    /// PageZoom).
+    var automaticZoom = true
     /// Data stores whose deletion has not completed yet (retried at launch).
     var pendingDeletion: [UUID] = []
 
@@ -138,6 +145,7 @@ struct AppStateData: Codable {
         selectedProfileID = try c.decodeIfPresent(UUID.self, forKey: .selectedProfileID)
         showAll = try c.decodeIfPresent(Bool.self, forKey: .showAll) ?? false
         pendingDeletion = try c.decodeIfPresent([UUID].self, forKey: .pendingDeletion) ?? []
+        automaticZoom = (try? c.decodeIfPresent(Bool.self, forKey: .automaticZoom)) ?? true
         let savedLayout = try? c.decodeIfPresent(GridPreset.self, forKey: .layout)
         layout = savedLayout ?? (showAll ? GridPreset.automatic : GridPreset.single)
         layoutSlots = (try? c.decodeIfPresent([String: [UUID?]].self, forKey: .layoutSlots)) ?? [:]

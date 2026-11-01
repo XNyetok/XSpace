@@ -32,6 +32,18 @@ final class PaneView: NSView, WKNavigationDelegate, WKUIDelegate {
     var onEditShortcuts: ((ShortcutEdit) -> Void)? {
         didSet { refreshShortcuts() }
     }
+    /// Whether the page's zoom follows the size of the pane (see PageZoom); otherwise it is 100%.
+    /// Either way the profile's own zoom comes on top. Set for the panes of the main window.
+    var automaticZoom = false {
+        didSet { if automaticZoom != oldValue { updateZoom() } }
+    }
+    /// The profile's own zoom (⌘+ / ⌘−): percentage points on top of the automatic zoom.
+    var zoomOffset = 0 {
+        didSet { if zoomOffset != oldValue { updateZoom() } }
+    }
+    /// ⌘+, ⌘− or ⌘0 changed the profile's own zoom. Set for the panes of the main window, which
+    /// keep it for the profile.
+    var onZoomOffsetChange: ((Int) -> Void)?
 
     private let toolbar = NSView()
     /// The profile's dot and name; opens the menu of menuProvider.
@@ -50,6 +62,9 @@ final class PaneView: NSView, WKNavigationDelegate, WKUIDelegate {
     private(set) var needsReloadWhenVisible = false
     /// Shown over the page while the pane has no page yet, or after Beranda; nil otherwise.
     private var startPage: StartPageView?
+    /// Waits for the mouse button to be released before the zoom follows a new size (see
+    /// setFrameSize).
+    private var zoomTimer: Timer?
 
     /// - Parameters:
     ///   - configuration: supplied by WebKit for popups and must be used as is, so a sign-in popup
@@ -106,6 +121,8 @@ final class PaneView: NSView, WKNavigationDelegate, WKUIDelegate {
         }
         observations.forEach { $0.invalidate() }
         observations.removeAll()
+        zoomTimer?.invalidate()
+        zoomTimer = nil
         webView.stopLoading()
         webView.navigationDelegate = nil
         webView.uiDelegate = nil
@@ -118,6 +135,7 @@ final class PaneView: NSView, WKNavigationDelegate, WKUIDelegate {
         onRequestClose = nil
         shortcutsProvider = nil
         onEditShortcuts = nil
+        onZoomOffsetChange = nil
     }
 
     // MARK: Views
@@ -311,7 +329,72 @@ final class PaneView: NSView, WKNavigationDelegate, WKUIDelegate {
         startPage?.show(profile)
     }
 
+    // MARK: Zoom
+
+    /// The area of the page: the pane below its toolbar.
+    var pageArea: CGSize {
+        CGSize(width: bounds.width, height: max(0, bounds.height - Self.toolbarHeight))
+    }
+
+    /// The zoom without the profile's own: automatic, or 100%.
+    private var baseZoom: Int {
+        automaticZoom ? PageZoom.automatic(for: pageArea) : 100
+    }
+
+    /// Gives the page the zoom it should have now. With the automatic zoom, a pane that has no size
+    /// yet waits for one.
+    func updateZoom() {
+        let area = pageArea
+        guard !automaticZoom || (area.width > 0 && area.height > 0) else { return }
+        let zoom = CGFloat(PageZoom.zoom(base: baseZoom, offset: zoomOffset)) / 100
+        if webView.pageZoom != zoom { webView.pageZoom = zoom }
+    }
+
+    private func changeZoomOffset(to offset: Int) {
+        guard offset != zoomOffset else { return }
+        zoomOffset = offset
+        onZoomOffsetChange?(offset)
+    }
+
+    /// While a divider or the window is being dragged, the page follows the new size at its zoom,
+    /// and the zoom follows once the mouse button is released: a new zoom makes WebKit lay out the
+    /// whole page again, and doing that on every step of a drag took about 40% more CPU (measured
+    /// with a busy test page).
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        guard automaticZoom else { return }
+        if inLiveResize || NSEvent.pressedMouseButtons != 0 {
+            updateZoomWhenMouseIsReleased()
+        } else {
+            updateZoom()
+        }
+    }
+
+    override func viewDidEndLiveResize() {
+        super.viewDidEndLiveResize()
+        updateZoom()
+    }
+
+    private func updateZoomWhenMouseIsReleased() {
+        guard zoomTimer == nil else { return }
+        let timer = Timer(timeInterval: 0.15, repeats: true) { [weak self] timer in
+            MainActor.assumeIsolated {
+                guard NSEvent.pressedMouseButtons == 0 else { return }
+                timer.invalidate()
+                self?.zoomTimer = nil
+                self?.updateZoom()
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        zoomTimer = timer
+    }
+
     // MARK: Hooks for the automated UI test (--selftest-ui)
+
+    /// The page's zoom, in percent.
+    var testZoom: Int {
+        Int((webView.pageZoom * 100).rounded())
+    }
 
     /// The names on the start page's shortcut tiles that are shown, the tile to add one included.
     var testShortcutTitles: [String]? {
@@ -444,9 +527,19 @@ final class PaneView: NSView, WKNavigationDelegate, WKUIDelegate {
         urlField.currentEditor()?.selectAll(nil)
     }
 
-    @objc func zoomInPane(_ sender: Any?) { webView.pageZoom = min(3.0, ((webView.pageZoom * 10).rounded() + 1) / 10) }
-    @objc func zoomOutPane(_ sender: Any?) { webView.pageZoom = max(0.3, ((webView.pageZoom * 10).rounded() - 1) / 10) }
-    @objc func actualSizePane(_ sender: Any?) { webView.pageZoom = 1.0 }
+    /// ⌘+ and ⌘−: the profile's own zoom, on top of the automatic one.
+    @objc func zoomInPane(_ sender: Any?) {
+        changeZoomOffset(to: PageZoom.offset(zoomOffset, base: baseZoom, adding: PageZoom.step))
+    }
+
+    @objc func zoomOutPane(_ sender: Any?) {
+        changeZoomOffset(to: PageZoom.offset(zoomOffset, base: baseZoom, adding: -PageZoom.step))
+    }
+
+    /// ⌘0, Atur Ulang Zoom: back to the automatic zoom (100% without it).
+    @objc func resetZoomPane(_ sender: Any?) {
+        changeZoomOffset(to: 0)
+    }
 
     @objc private func urlFieldSubmitted(_ sender: NSTextField) {
         let text = sender.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)

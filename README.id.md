@@ -27,6 +27,8 @@ saling bercampur dan tanpa banyak jendela browser yang tersebar di beberapa Spac
 - Satu pane per profil, diatur dengan tata letak: **Otomatis** (semua profil dalam grid), 1,
   2 berdampingan, 2 bertumpuk, 3 berdampingan, 2 × 2, 1 + 2, atau 1 + 3. Ukuran pane bisa
   diubah dan posisinya ditukar, dan setiap tata letak mengingat profil dan ukurannya
+- Zoom otomatis: pane yang kecil menampilkan halamannya lebih kecil (paling kecil 70%), jadi situs
+  tetap memakai tampilan seperti di jendela browser, bukan tampilan untuk ponsel
 - Layar sambutan untuk memilih tata letak saat pertama dibuka, dan halaman awal seperti tab baru
   di browser, dengan pintasan ke situs-situsmu: tidak ada yang dimuat sebelum kamu membuka halaman
 - Warna per profil dan bingkai pane, supaya selalu jelas sedang di akun mana
@@ -92,11 +94,27 @@ notarisasi.
 | Ganti nama/warna atau hapus profil | tombol **⋯** atau menu **Profil**; menghapus profil terakhir memunculkan layar sambutan lagi |
 | Kolom alamat pane aktif | ⌘L |
 | Muat ulang / kembali / maju | ⌘R / ⌘[ / ⌘] |
-| Zoom pane | ⌘= / ⌘- / ⌘0 |
+| Zoom pane | otomatis (lihat [Zoom](#zoom)); ⌘= / ⌘- memperbesar atau memperkecil pane yang aktif dari situ, ⌘0 kembali ke zoom otomatis |
 | Ubah ukuran pane | geser pembatas; klik dua kali = rata lagi; ⌃⌘0 (**Tampilan → Atur Ulang Ukuran Pane**, juga di bagian bawah menu **Tata Letak**) mengembalikan pane di tata letak itu ke ukuran bawaannya |
 | Pemakaian & pengaturan hemat RAM | indikator **RAM …**, atau menu **Tampilan → Hemat RAM** |
 
 Profil yang aktif adalah yang panenya sedang menerima ketikan; perintah profil berlaku untuknya.
+
+### Zoom
+
+Situs web dibuat untuk jendela browser. Pane yang lebih kecil dari jendela browser yang kecil
+(1024 × 640 poin) menampilkan halamannya lebih kecil, turun per 5% sampai paling kecil 70%, jadi
+halaman tetap disusun seperti di jendela browser, bukan berpindah ke tampilan untuk tablet atau
+ponsel. Di MacBook Air 13 inci, satu profil tetap 100% dan pane di tata letak lain 70%. Selama
+pembatas atau jendela sedang digeser, zoom menunggu sampai tombol mouse dilepas.
+
+⌘= dan ⌘- memperbesar atau memperkecil halaman pane yang aktif dari situ, per 10%; profilnya
+mengingat ini, juga setelah dibekukan dan setelah XSpace ditutup. ⌘0 (**Tampilan → Atur Ulang
+Zoom**) kembali ke zoom otomatis. Untuk menampilkan semua halaman 100%, matikan **Tampilan → Zoom
+Otomatis**.
+
+Zoom yang lebih kecil tidak menghemat CPU: halaman di pane kecil memakai CPU kurang lebih sama
+dengan di pane besar. Yang menghemat CPU dan RAM adalah profil yang tidak tampil (lihat di bawah).
 
 ### Hemat RAM
 
@@ -143,13 +161,13 @@ profil; sesinya tersimpan.
 ## Pengembangan
 
 ```bash
-swift test                 # unit test: kolom alamat, state tersimpan, tata letak, pembagi pane, ...
+swift test                 # unit test: kolom alamat, state tersimpan, tata letak, zoom, pembagi pane, ...
 APP=build/XSpace.app/Contents/MacOS/XSpace
 $APP --selftest            # isolasi profil, halaman Google, User-Agent, persistensi (tulis)
 $APP --selftest-persist    # persistensi (baca ulang) + bersih-bersih
 $APP --selftest-ui         # jendela sungguhan dengan state sementara: upgrade dari 0.5.0,
-                           # pembekuan, tata letak, menampilkan dan menukar profil, fokus
-                           # keyboard, indikator RAM, hapus profil, pertama dibuka (layar
+                           # pembekuan, tata letak dan zoom, menampilkan dan menukar profil,
+                           # fokus keyboard, indikator RAM, hapus profil, pertama dibuka (layar
                            # sambutan, halaman awal, pintasan)
 ```
 
@@ -164,6 +182,7 @@ Semua self-test memakai profil uji sementara dan tidak menyentuh profil asli. Se
 | `Sources/XSpace/Grid.swift` | tata letak: preset sebagai pohon slot, grid otomatis |
 | `Sources/XSpace/WebKitSupport.swift` | konfigurasi webview, User-Agent Safari, penghapusan data store, unduhan, halaman error |
 | `Sources/XSpace/PaneView.swift` | satu pane: toolbar mini + `WKWebView` + delegate navigasi/UI |
+| `Sources/XSpace/PageZoom.swift` | zoom halaman sebuah pane: otomatis dari ukuran pane, ditambah zoom profil itu sendiri |
 | `Sources/XSpace/StartPageView.swift` | halaman awal pane, seperti tab baru di browser: kotak pencarian dan pintasan |
 | `Sources/XSpace/WelcomeView.swift` | layar sambutan saat pertama dibuka: memilih tata letak |
 | `Sources/XSpace/GridView.swift` | pane di slot tata letak, pane tersembunyi, slot kosong, ikon dan gambar tata letak |

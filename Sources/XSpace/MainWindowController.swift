@@ -246,9 +246,14 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
             pane.reloadIfNeeded()
             return pane
         }
-        let url = state.data.profiles.first { $0.id == profile.id }?.url
-        let pane = PaneView(profile: profile, configuration: nil, initialURL: url.flatMap { URL(string: $0) })
+        let saved = state.data.profiles.first { $0.id == profile.id }
+        let pane = PaneView(profile: profile, configuration: nil, initialURL: saved?.url.flatMap { URL(string: $0) })
         let id = profile.id
+        pane.zoomOffset = saved?.zoomOffset ?? 0
+        pane.automaticZoom = state.data.automaticZoom
+        pane.onZoomOffsetChange = { [weak self] offset in
+            self?.state.updateProfile(id) { $0.zoomOffset = offset == 0 ? nil : offset }
+        }
         pane.onURLChange = { [weak self] url in self?.state.updateProfile(id) { $0.url = url } }
         pane.menuProvider = { [weak self] in self?.paneMenu(for: id) }
         pane.shortcutsProvider = { [weak self] in self?.state.data.profiles.first { $0.id == id }?.shortcuts ?? [] }
@@ -409,6 +414,13 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         state.data.resetSizes()
         state.scheduleSave()
         applyLayout()
+    }
+
+    /// Zoom Otomatis: whether the zoom of every page follows the size of its pane (see PageZoom).
+    @objc func toggleAutomaticZoom(_ sender: Any?) {
+        state.data.automaticZoom.toggle()
+        state.scheduleSave()
+        panes.values.forEach { $0.automaticZoom = state.data.automaticZoom }
     }
 
     private func swapSlots(_ first: Int, _ second: Int) {
@@ -916,7 +928,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
     @objc func openLocation(_ sender: Any?) { activePane?.openLocation(sender) }
     @objc func zoomInPane(_ sender: Any?) { activePane?.zoomInPane(sender) }
     @objc func zoomOutPane(_ sender: Any?) { activePane?.zoomOutPane(sender) }
-    @objc func actualSizePane(_ sender: Any?) { activePane?.actualSizePane(sender) }
+    @objc func resetZoomPane(_ sender: Any?) { activePane?.resetZoomPane(sender) }
 
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         switch menuItem.action {
@@ -928,6 +940,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
             return !profiles.isEmpty
         case #selector(resetPaneSizes(_:)):
             return !profiles.isEmpty && state.data.hasCustomSizes
+        case #selector(toggleAutomaticZoom(_:)):
+            menuItem.state = state.data.automaticZoom ? .on : .off
+            return !profiles.isEmpty
         case #selector(renameProfile(_:)), #selector(cycleProfileColor(_:)), #selector(deleteProfile(_:)):
             return activeProfile != nil
         case #selector(setHibernatePolicy(_:)):
@@ -941,7 +956,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
             return state.data.shownProfiles.count > 1
         case #selector(reloadPane(_:)), #selector(backPane(_:)), #selector(forwardPane(_:)),
              #selector(homePane(_:)), #selector(openLocation(_:)), #selector(zoomInPane(_:)),
-             #selector(zoomOutPane(_:)), #selector(actualSizePane(_:)):
+             #selector(zoomOutPane(_:)), #selector(resetZoomPane(_:)):
             return activePane != nil
         default:
             break
