@@ -130,13 +130,15 @@ final class UISelfTest: NSObject, NSApplicationDelegate {
         if let workspace = controller.testWorkspace(first), workspace.panes.count == 2 {
             let (left, right) = (workspace.panes[0], workspace.panes[1])
             let urlsBefore = workspace.urls
-            controller.swapPanes(nil)   // acts on the selected workspace: `first`
+            controller.window?.makeFirstResponder(left.webView)
+            check(controller.focusedPane === left, "The pane commands act on the pane you are in")
+            controller.swapPanes(nil)
             workspace.layoutSubtreeIfNeeded()
             check(workspace.panes[0] === right && workspace.panes[1] === left && right.frame.minX < left.frame.minX,
                   "The two panes trade places (same web views, nothing recreated)")
             let saved = StateStore.shared.data.workspaces.first { $0.id == workspace.id }?.root.panes.map(\.url)
             check(workspace.urls == Array(urlsBefore.reversed()) && saved == workspace.urls, "The new order is saved")
-            controller.swapPanes(nil)
+            controller.swapPanes(nil)   // the focused pane is the last one now: it swaps with the one before
             workspace.layoutSubtreeIfNeeded()
             check(workspace.panes[0] === left && left.frame.minX < right.frame.minX, "Swapping again restores the order")
         } else {
@@ -162,8 +164,18 @@ final class UISelfTest: NSObject, NSApplicationDelegate {
         await pause(2)
         if let mixed = controller.testWorkspace(id: mixedID), mixed.panes.count == 3 {
             await checkMixedWorkspace(mixed, profiles: [firstID, secondID, firstID])
+            // Stacked panes swap too, with ⌃⌘X (the ⇄ button is only between panes side by side).
+            let (top, bottom) = (mixed.panes[1], mixed.panes[2])
+            controller.window?.makeFirstResponder(top.webView)
+            controller.swapPanes(nil)
+            mixed.layoutSubtreeIfNeeded()
+            check(mixed.panes[1] === bottom && mixed.panes[2] === top && bottom.frame.minY > top.frame.minY,
+                  "Two stacked panes trade places")
+            controller.swapPanes(nil)
+            mixed.layoutSubtreeIfNeeded()
             let layoutBefore = mixed.currentLayout()
             controller.testSelect(first)
+            check(controller.focusedPane == nil, "A pane that is no longer on screen is not the pane you are in")
             controller.hibernateHiddenNow(nil)
             check(!mixed.isAwake && mixed.panes.isEmpty, "A hidden workspace is frozen as a whole")
             controller.testSelectWorkspace(id: mixedID)

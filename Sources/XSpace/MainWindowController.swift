@@ -37,10 +37,35 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         workspaces.first { $0.id == state.data.selectedWorkspaceID } ?? workspaces.first
     }
 
-    /// The profile the profile commands act on: the one the selected workspace shows (for a
-    /// workspace with several profiles, the one in its first pane).
+    /// The profile the profile commands act on: the one of the pane you are in (see targetPane).
     var selectedProfile: Profile? {
-        selectedWorkspace?.root.panes.first.flatMap { profile($0.profileID) } ?? profiles.first
+        targetPane?.profile ?? selectedWorkspace?.root.panes.first.flatMap { profile($0.profileID) } ?? profiles.first
+    }
+
+    /// The pane with the keyboard focus (its page or its address field), if it is on screen.
+    var focusedPane: PaneView? {
+        var view = window?.firstResponder as? NSView
+        while let current = view {
+            if let pane = current as? PaneView {
+                return pane.isHiddenOrHasHiddenAncestor ? nil : pane
+            }
+            view = current.superview
+        }
+        return nil
+    }
+
+    /// The pane the pane and profile commands act on: the one you are in, otherwise the first
+    /// pane of the selected workspace.
+    private var targetPane: PaneView? {
+        focusedPane ?? defaultPane
+    }
+
+    /// The workspace that shows `pane`, and the pane's ID in its layout.
+    private func locate(_ pane: PaneView) -> (workspace: WorkspaceView, paneID: UUID)? {
+        for view in workspaceViews.values {
+            if let id = view.paneID(of: pane) { return (view, id) }
+        }
+        return nil
     }
 
     func profile(_ id: UUID) -> Profile? {
@@ -574,15 +599,18 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         rebuildSwitcher()
     }
 
-    /// Swaps the first two panes of the selected workspace.
+    /// Swaps the pane you are in with its neighbor: the next one, or the previous one for the last.
     @objc func swapPanes(_ sender: Any?) {
-        guard let workspace = selectedWorkspace else { return }
-        workspaceViews[workspace.id]?.swapPanes(at: 0)
+        guard let pane = targetPane, let located = locate(pane) else { return }
+        located.workspace.swapPaneWithNeighbor(located.paneID)
     }
 
+    /// Gives the workspace of the pane you are in the default panes, in that pane's profile.
     @objc func resetPanes(_ sender: Any?) {
-        guard let workspace = selectedWorkspace, let profile = selectedProfile else { return }
-        workspaceViews[workspace.id]?.resetToDefaults(profileID: profile.id)
+        guard let pane = targetPane, let located = locate(pane) else { return }
+        located.workspace.resetToDefaults(profileID: pane.profile.id)
+        rebuildSwitcher()
+        applyVisibility()
     }
 
     @objc func deleteProfile(_ sender: Any?) {
@@ -675,8 +703,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         case #selector(deleteProfile(_:)):
             return profiles.count > 1
         case #selector(swapPanes(_:)):
-            if case .split(let split)? = selectedWorkspace?.root { return split.children.count > 1 }
-            return false
+            guard let pane = targetPane, let located = locate(pane) else { return false }
+            return located.workspace.layout.parent(of: located.paneID) != nil
+        case #selector(resetPanes(_:)):
+            return targetPane != nil
         case #selector(reloadPane(_:)), #selector(backPane(_:)), #selector(forwardPane(_:)),
              #selector(openLocation(_:)), #selector(zoomInPane(_:)), #selector(zoomOutPane(_:)),
              #selector(actualSizePane(_:)):

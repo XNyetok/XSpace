@@ -74,12 +74,25 @@ final class WorkspaceView: NSView {
         }
     }
 
+    /// The ID of `pane` in the layout, if it is one of this workspace's panes.
+    func paneID(of pane: PaneView) -> UUID? {
+        paneViews.first { $0.value === pane }?.key
+    }
+
     /// Swaps the child at `index` of the outer split with the next one: for a workspace from
     /// 0.5.0, its two panes. The web views move as they are (nothing reloads), each keeps its
     /// size, and the new order is saved. A frozen workspace stays frozen.
     func swapPanes(at index: Int) {
         guard case .split(let split) = layout else { return }
         swapChildren(ofSplit: split.id, at: index)
+    }
+
+    /// Swaps the pane with the next one in its split, or with the previous one if it is the last,
+    /// side by side or stacked. As with swapPanes(at:), nothing reloads.
+    func swapPaneWithNeighbor(_ paneID: UUID) {
+        guard let parent = layout.parent(of: paneID) else { return }
+        let isLast = parent.index + 1 == parent.split.children.count
+        swapChildren(ofSplit: parent.split.id, at: isLast ? parent.index - 1 : parent.index)
     }
 
     func resetToDefaults(profileID: UUID) {

@@ -3,6 +3,7 @@ import AppKit
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var controller: MainWindowController?
+    private let paneMenu = NSMenu(title: "Pane")
     private let profilesMenu = NSMenu(title: "Profil")
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -128,6 +129,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         viewMenu.addItem(item("Layar Penuh", #selector(NSWindow.toggleFullScreen(_:)), "f", [.command, .control]))
         add(viewMenu, to: mainMenu)
 
+        rebuildPaneMenu()
+        add(paneMenu, to: mainMenu)
+
         rebuildProfilesMenu()
         add(profilesMenu, to: mainMenu)
 
@@ -143,14 +147,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.mainMenu = mainMenu
     }
 
+    /// Commands for the pane you are in (see MainWindowController.targetPane).
+    private func rebuildPaneMenu() {
+        guard let controller else { return }
+        paneMenu.removeAllItems()
+        paneMenu.addItem(item("Tukar Posisi Pane", #selector(MainWindowController.swapPanes(_:)), "x", [.command, .control], target: controller))
+        paneMenu.addItem(item("Atur Ulang Pane ke Default", #selector(MainWindowController.resetPanes(_:)), "", [], target: controller))
+    }
+
+    /// Commands for the profile of the pane you are in, and the workspaces.
     private func rebuildProfilesMenu() {
         guard let controller else { return }
         profilesMenu.removeAllItems()
         profilesMenu.addItem(item("Tambah Profil…", #selector(MainWindowController.addProfile(_:)), "n", [.command, .shift], target: controller))
         profilesMenu.addItem(item("Ganti Nama Profil…", #selector(MainWindowController.renameProfile(_:)), "", [], target: controller))
         profilesMenu.addItem(item("Ganti Warna Profil", #selector(MainWindowController.cycleProfileColor(_:)), "", [], target: controller))
-        profilesMenu.addItem(item("Tukar Posisi Pane", #selector(MainWindowController.swapPanes(_:)), "x", [.command, .control], target: controller))
-        profilesMenu.addItem(item("Atur Ulang Pane ke Default", #selector(MainWindowController.resetPanes(_:)), "", [], target: controller))
         profilesMenu.addItem(item("Hapus Profil…", #selector(MainWindowController.deleteProfile(_:)), "", [], target: controller))
         profilesMenu.addItem(.separator())
         // The workspaces, like the switcher in the toolbar (⌘1–⌘9).
