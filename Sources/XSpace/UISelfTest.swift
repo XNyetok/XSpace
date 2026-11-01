@@ -186,7 +186,15 @@ final class UISelfTest: NSObject, NSApplicationDelegate {
             check(false, "The workspace shows three panes")
         }
 
-        log("\n[6] RAM indicator")
+        log("\n[6] Pane commands")
+        controller.testSelect(first)
+        if let workspace = controller.testWorkspace(first), workspace.panes.count == 2 {
+            checkShowingInAnotherProfile(controller, workspace, first: (firstID, first), second: (secondID, second))
+        } else {
+            check(false, "The first workspace has two panes")
+        }
+
+        log("\n[7] RAM indicator")
         let report = controller.memoryReport()
         log("   total \(report.totalText) — UI \(MemoryProbe.format(report.app)), GPU \(MemoryProbe.format(report.gpu)), networking \(MemoryProbe.format(report.network))")
         for usage in report.profiles {
@@ -202,7 +210,7 @@ final class UISelfTest: NSObject, NSApplicationDelegate {
             await controller.writeSnapshot(to: URL(fileURLWithPath: args[index + 1]))
         }
 
-        log("\n[7] Deleting a profile")
+        log("\n[8] Deleting a profile")
         // A new profile is selected, so its panes load, as when the user deletes the profile on
         // screen. It also gets a pane in a workspace it shares with another profile, which is shown
         // too. Only its ID is kept here: holding the Profile would keep its data store alive.
@@ -240,7 +248,7 @@ final class UISelfTest: NSObject, NSApplicationDelegate {
             check(!queued && !stores.contains(third), "Deleting a profile deletes its data store right away (\(seconds) s)")
         }
 
-        log("\n[8] Clean up")
+        log("\n[9] Clean up")
         var removals = controller.profiles.map { DataStoreRemoval($0.store) }
         if heldByWebKit, let removal = watch?.removal { removals.append(removal) }
         controller.testDestroyAll()
@@ -284,6 +292,37 @@ final class UISelfTest: NSObject, NSApplicationDelegate {
         } catch {
             check(false, "Writing a 0.5.0 state.json (\(error.localizedDescription))")
         }
+    }
+
+    /// [6]: showing a pane in another profile, from the pane's own menu (its profile name) and from
+    /// Pane → Ganti Profil Pane. `workspace` shows two panes of the first profile.
+    private func checkShowingInAnotherProfile(_ controller: MainWindowController, _ workspace: WorkspaceView,
+                                              first: (id: UUID, name: String), second: (id: UUID, name: String)) {
+        let (left, right) = (workspace.panes[0], workspace.panes[1])
+        guard let rightID = workspace.paneID(of: right), let menu = controller.paneMenu(in: workspace, paneID: rightID) else {
+            return check(false, "The pane has a menu")
+        }
+        check(menu.items.first { $0.state == .on }?.title == first.name, "The pane's menu marks its profile")
+        guard let index = menu.items.firstIndex(where: { $0.title == second.name }) else {
+            return check(false, "The pane's menu lists the other profile")
+        }
+        menu.performActionForItem(at: index)
+        workspace.layoutSubtreeIfNeeded()
+        let shown = workspace.panes
+        check(shown.count == 2 && shown[0] === left && shown[1] !== right && shown[1].profile.id == second.id
+              && shown[1].webView.configuration.websiteDataStore === shown[1].profile.store
+              && right.webView.superview == nil,
+              "The pane shows the other profile in a new web view; the pane next to it keeps running")
+        let saved = StateStore.shared.data.workspaces.first { $0.id == workspace.id }
+        check(saved?.root.panes.map(\.profileID) == [first.id, second.id]
+              && saved.map { controller.title(of: $0) } == "\(first.name) + \(second.name)"
+              && controller.focusedPane === shown[1],
+              "The change is saved, the workspace is named after both profiles, and the pane has the focus")
+        let item = NSMenuItem()
+        item.representedObject = first.id
+        controller.showPaneInProfile(item)   // Pane → Ganti Profil Pane acts on the pane you are in
+        check(workspace.panes.count == 2 && workspace.panes[0] === left && workspace.panes[1].profile.id == first.id,
+              "Pane → Ganti Profil Pane shows the pane you are in in the first profile again")
     }
 
     /// state.json as saved, as JSON.
@@ -337,7 +376,7 @@ final class UISelfTest: NSObject, NSApplicationDelegate {
     }
 }
 
-/// Watches a profile while it is deleted (see [7]) without keeping anything alive: weak references
+/// Watches a profile while it is deleted (see [8]) without keeping anything alive: weak references
 /// to XSpace's objects and the data store, and the PIDs of the panes' page processes.
 @MainActor
 private final class DeletionWatch {
@@ -346,7 +385,7 @@ private final class DeletionWatch {
         init(_ object: AnyObject) { self.object = object }
     }
 
-    /// Deletes the store if the app could not (see [8]).
+    /// Deletes the store if the app could not (see [9]).
     let removal: DataStoreRemoval
     let paneCount: Int
     private let xspaceObjects: [(name: String, box: WeakBox)]

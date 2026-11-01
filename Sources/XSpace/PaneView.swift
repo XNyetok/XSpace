@@ -14,10 +14,15 @@ final class PaneView: NSView, WKNavigationDelegate, WKUIDelegate {
     var onURLChange: ((String) -> Void)?
     var onTitleChange: ((String) -> Void)?
     var onRequestClose: (() -> Void)?
+    /// Builds the menu that the profile name opens (show this pane in another profile). Set by
+    /// the pane's workspace; a popup has none, and there the name is only a label.
+    var menuProvider: (() -> NSMenu?)? {
+        didSet { refreshProfileAppearance() }
+    }
 
     private let toolbar = NSView()
-    private let dotView = NSImageView()
-    private let nameLabel = NSTextField(labelWithString: "")
+    /// The profile's dot and name; opens the menu of menuProvider.
+    private let profileButton = NSButton()
     private let backButton = NSButton()
     private let forwardButton = NSButton()
     private let reloadButton = NSButton()
@@ -87,11 +92,14 @@ final class PaneView: NSView, WKNavigationDelegate, WKUIDelegate {
         progressBar.wantsLayer = true
         progressBar.isHidden = true
 
-        dotView.translatesAutoresizingMaskIntoConstraints = false
-        nameLabel.font = .systemFont(ofSize: 11, weight: .semibold)
-        nameLabel.lineBreakMode = .byTruncatingTail
-        nameLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        nameLabel.setContentHuggingPriority(.required, for: .horizontal)
+        profileButton.isBordered = false
+        profileButton.imagePosition = .imageLeading
+        profileButton.imageHugsTitle = true
+        profileButton.lineBreakMode = .byTruncatingTail
+        profileButton.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        profileButton.setContentHuggingPriority(.required, for: .horizontal)
+        profileButton.target = self
+        profileButton.action = #selector(showPaneMenu(_:))
 
         configure(backButton, symbol: "chevron.left", tip: "Kembali (⌘[)", action: #selector(backPane(_:)))
         configure(forwardButton, symbol: "chevron.right", tip: "Maju (⌘])", action: #selector(forwardPane(_:)))
@@ -111,12 +119,12 @@ final class PaneView: NSView, WKNavigationDelegate, WKUIDelegate {
         urlField.action = #selector(urlFieldSubmitted(_:))
         urlField.setContentHuggingPriority(.defaultLow, for: .horizontal)
 
-        let bar = NSStackView(views: [dotView, nameLabel, backButton, forwardButton, reloadButton, urlField])
+        let bar = NSStackView(views: [profileButton, backButton, forwardButton, reloadButton, urlField])
         bar.orientation = .horizontal
         bar.spacing = 6
         // 8 pt on both sides keeps the controls clear of the swap button between two panes.
         bar.edgeInsets = NSEdgeInsets(top: 0, left: 8, bottom: 0, right: 8)
-        bar.setCustomSpacing(10, after: nameLabel)
+        bar.setCustomSpacing(10, after: profileButton)
         bar.translatesAutoresizingMaskIntoConstraints = false
 
         toolbar.addSubview(bar)
@@ -136,9 +144,7 @@ final class PaneView: NSView, WKNavigationDelegate, WKUIDelegate {
             bar.trailingAnchor.constraint(equalTo: toolbar.trailingAnchor),
             bar.centerYAnchor.constraint(equalTo: toolbar.centerYAnchor),
 
-            dotView.widthAnchor.constraint(equalToConstant: 10),
-            dotView.heightAnchor.constraint(equalToConstant: 10),
-            nameLabel.widthAnchor.constraint(lessThanOrEqualToConstant: 140),
+            profileButton.widthAnchor.constraint(lessThanOrEqualToConstant: 170),
             urlField.widthAnchor.constraint(greaterThanOrEqualToConstant: 40),
 
             progressBar.leadingAnchor.constraint(equalTo: toolbar.leadingAnchor),
@@ -171,9 +177,25 @@ final class PaneView: NSView, WKNavigationDelegate, WKUIDelegate {
             self.progressBar.layer?.backgroundColor = self.profile.color.cgColor
             self.toolbar.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
         }
-        dotView.image = Palette.dot(profile.color, diameter: 10)
-        nameLabel.stringValue = profile.name
-        nameLabel.textColor = profile.color
+        profileButton.image = Palette.dot(profile.color, diameter: 10)
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineBreakMode = .byTruncatingTail
+        let title = NSMutableAttributedString(string: profile.name, attributes: [
+            .font: NSFont.systemFont(ofSize: 11, weight: .semibold),
+            .foregroundColor: profile.color,
+            .paragraphStyle: paragraph,
+        ])
+        if menuProvider != nil {
+            title.append(NSAttributedString(string: " ▾", attributes: [
+                .font: NSFont.systemFont(ofSize: 12),
+                .foregroundColor: NSColor.secondaryLabelColor,
+                .baselineOffset: 1,
+                .paragraphStyle: paragraph,
+            ]))
+        }
+        profileButton.attributedTitle = title
+        profileButton.toolTip = menuProvider == nil ? profile.name : "\(profile.name): tampilkan pane ini di profil lain"
+        profileButton.setAccessibilityLabel("Profil \(profile.name)")
     }
 
     override func viewDidChangeEffectiveAppearance() {
@@ -245,6 +267,12 @@ final class PaneView: NSView, WKNavigationDelegate, WKUIDelegate {
         } else {
             webView.reload()
         }
+    }
+
+    @objc private func showPaneMenu(_ sender: NSButton) {
+        guard let menu = menuProvider?() else { return }
+        let below = sender.isFlipped ? sender.bounds.maxY + 4 : sender.bounds.minY - 4
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: below), in: sender)
     }
 
     @objc func reloadOrStop(_ sender: Any?) {

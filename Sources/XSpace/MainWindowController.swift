@@ -156,6 +156,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         view.onLayoutChanged = { [weak self] root in
             self?.state.updateWorkspace(id) { $0.root = root }
         }
+        view.menuForPane = { [weak self, weak view] paneID in
+            guard let self, let view else { return nil }
+            return self.paneMenu(in: view, paneID: paneID)
+        }
         view.isHidden = true
         workspaceViews[id] = view
         workspacesContainer.addWorkspace(view)
@@ -599,6 +603,49 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         rebuildSwitcher()
     }
 
+    // MARK: Pane commands
+
+    /// The menu that a pane's profile name opens: the profiles to show the pane in.
+    func paneMenu(in workspace: WorkspaceView, paneID: UUID) -> NSMenu? {
+        guard let pane = workspace.layout.pane(paneID) else { return nil }
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+        menu.addItem(.sectionHeader(title: "Tampilkan pane ini di profil"))
+        for profile in profiles {
+            let profileID = profile.id
+            let item = NSMenuItem(title: profile.name) { [weak self, weak workspace] in
+                guard let self, let workspace else { return }
+                self.showPane(paneID, in: workspace, inProfile: profileID)
+            }
+            item.image = Palette.dot(profile.color, diameter: 10)
+            item.state = profileID == pane.profileID ? .on : .off
+            menu.addItem(item)
+        }
+        return menu
+    }
+
+    /// Pane → Ganti Profil Pane: shows the pane you are in in the profile of the menu item.
+    @objc func showPaneInProfile(_ sender: NSMenuItem) {
+        guard let profileID = sender.representedObject as? UUID,
+              let pane = targetPane, let located = locate(pane) else { return }
+        showPane(located.paneID, in: located.workspace, inProfile: profileID)
+    }
+
+    private func showPane(_ paneID: UUID, in workspace: WorkspaceView, inProfile profileID: UUID) {
+        workspace.showPane(paneID, inProfile: profileID)
+        paneCommandDidFinish(in: workspace, focus: paneID)
+    }
+
+    /// After a pane command: the toolbar names and colors follow the profiles the workspaces show,
+    /// and the keyboard focus goes to the pane `focus`.
+    private func paneCommandDidFinish(in workspace: WorkspaceView, focus paneID: UUID?) {
+        rebuildSwitcher()
+        applyVisibility()
+        if let paneID, let pane = workspace.paneView(paneID) {
+            window?.makeFirstResponder(pane.webView)
+        }
+    }
+
     /// Swaps the pane you are in with its neighbor: the next one, or the previous one for the last.
     @objc func swapPanes(_ sender: Any?) {
         guard let pane = targetPane, let located = locate(pane) else { return }
@@ -707,6 +754,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
             return located.workspace.layout.parent(of: located.paneID) != nil
         case #selector(resetPanes(_:)):
             return targetPane != nil
+        case #selector(showPaneInProfile(_:)):
+            menuItem.state = (menuItem.representedObject as? UUID) == targetPane?.profile.id ? .on : .off
+            return targetPane != nil
         case #selector(reloadPane(_:)), #selector(backPane(_:)), #selector(forwardPane(_:)),
              #selector(openLocation(_:)), #selector(zoomInPane(_:)), #selector(zoomOutPane(_:)),
              #selector(actualSizePane(_:)):
@@ -783,5 +833,30 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         state.data.profiles.removeAll()
         state.data.workspaces.removeAll()
         state.save()
+    }
+}
+
+/// Runs a closure for a menu item. NSMenuItem.target is weak, so the item also keeps the action
+/// as its representedObject.
+@MainActor
+private final class MenuAction: NSObject {
+    private let handler: () -> Void
+
+    init(_ handler: @escaping () -> Void) {
+        self.handler = handler
+    }
+
+    @objc func run(_ sender: Any?) {
+        handler()
+    }
+}
+
+@MainActor
+private extension NSMenuItem {
+    convenience init(title: String, handler: @escaping () -> Void) {
+        self.init(title: title, action: #selector(MenuAction.run(_:)), keyEquivalent: "")
+        let action = MenuAction(handler)
+        target = action
+        representedObject = action
     }
 }

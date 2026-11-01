@@ -12,7 +12,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self else { return }
             await StateStore.shared.purgePendingDeletions()
             let controller = MainWindowController()
-            controller.onWorkspacesChanged = { [weak self] in self?.rebuildProfilesMenu() }
+            controller.onWorkspacesChanged = { [weak self] in
+                self?.rebuildPaneMenu()
+                self?.rebuildProfilesMenu()
+            }
             self.controller = controller
             self.installMainMenu()
             controller.showWindow(nil)
@@ -151,6 +154,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func rebuildPaneMenu() {
         guard let controller else { return }
         paneMenu.removeAllItems()
+        let profiles = NSMenu(title: "Ganti Profil Pane")
+        for profile in controller.profiles {
+            let entry = item(profile.name, #selector(MainWindowController.showPaneInProfile(_:)), "", [], target: controller)
+            entry.representedObject = profile.id
+            entry.image = Palette.dot(profile.color, diameter: 10)
+            profiles.addItem(entry)
+        }
+        let profilesHolder = NSMenuItem(title: profiles.title, action: nil, keyEquivalent: "")
+        profilesHolder.submenu = profiles
+        paneMenu.addItem(profilesHolder)
+        paneMenu.addItem(.separator())
         paneMenu.addItem(item("Tukar Posisi Pane", #selector(MainWindowController.swapPanes(_:)), "x", [.command, .control], target: controller))
         paneMenu.addItem(item("Atur Ulang Pane ke Default", #selector(MainWindowController.resetPanes(_:)), "", [], target: controller))
     }

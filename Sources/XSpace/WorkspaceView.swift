@@ -16,6 +16,8 @@ final class WorkspaceView: NSView {
     private var rootView: NSView?
 
     var onLayoutChanged: ((LayoutNode) -> Void)?
+    /// Builds the menu that a pane's profile name opens (see PaneView.menuProvider).
+    var menuForPane: ((UUID) -> NSMenu?)?
 
     init(id: UUID, layout: LayoutNode, profile: @escaping (UUID) -> Profile?) {
         self.id = id
@@ -34,9 +36,14 @@ final class WorkspaceView: NSView {
     /// The URL of every pane in reading order, also while frozen.
     var urls: [String] { layout.panes.map(\.url) }
 
+    /// The live pane `paneID`.
+    func paneView(_ paneID: UUID) -> PaneView? {
+        paneViews[paneID]
+    }
+
     func wake() {
         guard isAwake else {
-            rebuild()
+            reconcile()
             return
         }
         panes.forEach { $0.reloadIfNeeded() }
@@ -60,7 +67,7 @@ final class WorkspaceView: NSView {
     /// that are still in it keep running (nothing reloads), the others are destroyed.
     func update(layout newLayout: LayoutNode) {
         layout = newLayout
-        if isAwake { rebuild() }
+        if isAwake { reconcile() }
     }
 
     /// The layout with the panes' current URLs.
@@ -106,49 +113,85 @@ final class WorkspaceView: NSView {
         paneViews.values.forEach { $0.refreshProfileAppearance() }
     }
 
-    // MARK: Views
+    // MARK: Pane commands
 
-    /// Builds the views for the layout. Panes that are already running move into the new views.
-    private func rebuild() {
-        let running = paneViews
-        let oldSplits = Array(splitViews.values)
-        let oldRoot = rootView
-        paneViews = [:]
-        splitViews = [:]
-        let root = makeView(for: layout, reusing: running)
-        for (paneID, pane) in running where paneViews[paneID] == nil {
-            pane.tearDown()
+    /// Shows the pane in another profile: a new web view in that profile's data store opens the
+    /// pane's current page (a web view cannot change its data store). The other panes keep running.
+    func showPane(_ paneID: UUID, inProfile profileID: UUID) {
+        guard let pane = layout.pane(paneID), pane.profileID != profileID else { return }
+        layout = currentLayout().mapPanes { pane in
+            guard pane.id == paneID else { return pane }
+            var moved = pane
+            moved.profileID = profileID
+            return moved
         }
-        // The panes that are kept have moved already, so this only removes what is left.
-        oldSplits.forEach { $0.setPanes([]) }
-        if let oldRoot, oldRoot !== root, oldRoot.superview === self {
-            oldRoot.removeFromSuperview()
-        }
-        root.frame = bounds
-        root.autoresizingMask = [.width, .height]
-        if root.superview !== self { addSubview(root) }
-        rootView = root
+        layoutDidChange()
     }
 
-    private func makeView(for node: LayoutNode, reusing running: [UUID: PaneView]) -> NSView {
+    /// Updates the views to the changed layout (a frozen workspace stays frozen) and saves it.
+    private func layoutDidChange() {
+        if isAwake { reconcile() }
+        onLayoutChanged?(layout)
+    }
+
+    // MARK: Views
+
+    /// Makes the views match the layout. Panes and splits that are still in it keep their views:
+    /// pages keep running, nothing reloads, and a view only leaves the window when it moves into
+    /// another split. A pane whose profile changed gets a new web view in that profile.
+    private func reconcile() {
+        let oldPanes = paneViews
+        let oldSplits = splitViews
+        paneViews = [:]
+        splitViews = [:]
+        let root = makeView(for: layout, panes: oldPanes, splits: oldSplits)
+        if rootView !== root {
+            // Added first: a pane that becomes the root moves without leaving the window.
+            root.frame = bounds
+            root.autoresizingMask = [.width, .height]
+            addSubview(root)
+            if let oldRoot = rootView, oldRoot.superview === self { oldRoot.removeFromSuperview() }
+            rootView = root
+        }
+        // What is left of the old views. Splits that are kept have already let go of the
+        // views that left them; panes that are kept have moved into their new split.
+        for (id, pane) in oldPanes where paneViews[id] !== pane {
+            pane.tearDown()
+        }
+        for (id, split) in oldSplits where splitViews[id] !== split {
+            split.setPanes([])
+            split.removeFromSuperview()
+        }
+    }
+
+    private func makeView(for node: LayoutNode, panes oldPanes: [UUID: PaneView],
+                          splits oldSplits: [UUID: PaneSplitView]) -> NSView {
         switch node {
         case .pane(let pane):
-            guard let view = running[pane.id] ?? makePane(pane) else {
+            if let view = oldPanes[pane.id], view.profile.id == pane.profileID {
+                paneViews[pane.id] = view
+                return view
+            }
+            guard let view = makePane(pane) else {
                 return NSView()   // its profile is gone; never the case for a saved layout
             }
             paneViews[pane.id] = view
             return view
         case .split(let split):
-            let view = PaneSplitView()
+            let view = oldSplits[split.id] ?? makeSplitView(split.id)
             view.axis = split.axis
-            if let ratios = split.ratios { view.ratios = ratios.map { CGFloat($0) } }
-            let splitID = split.id
-            view.onRatiosChanged = { [weak self] ratios in self?.splitDidResize(splitID, ratios: ratios) }
-            view.onSwapRequested = { [weak self] index in self?.swapChildren(ofSplit: splitID, at: index) }
-            view.setPanes(split.children.map { makeView(for: $0, reusing: running) })
-            splitViews[splitID] = view
+            view.ratios = split.ratios?.map { CGFloat($0) } ?? []
+            view.setPanes(split.children.map { makeView(for: $0, panes: oldPanes, splits: oldSplits) })
+            splitViews[split.id] = view
             return view
         }
+    }
+
+    private func makeSplitView(_ splitID: UUID) -> PaneSplitView {
+        let view = PaneSplitView()
+        view.onRatiosChanged = { [weak self] ratios in self?.splitDidResize(splitID, ratios: ratios) }
+        view.onSwapRequested = { [weak self] index in self?.swapChildren(ofSplit: splitID, at: index) }
+        return view
     }
 
     private func makePane(_ pane: LayoutPane) -> PaneView? {
@@ -156,6 +199,7 @@ final class WorkspaceView: NSView {
         let view = PaneView(profile: profile, configuration: nil, initialURL: URL(string: pane.url))
         let paneID = pane.id
         view.onURLChange = { [weak self] url in self?.paneDidNavigate(paneID, url: url) }
+        view.menuProvider = { [weak self] in self?.menuForPane?(paneID) }
         return view
     }
 
