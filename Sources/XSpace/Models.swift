@@ -207,19 +207,16 @@ final class StateStore {
         save()
     }
 
-    /// Permanently deletes a profile's data store. WebKit refuses while the store is still in
-    /// use, so this retries; if it still fails, the store is deleted at the next launch.
-    func removeDataStore(_ id: UUID) async {
-        for delay in [1.0, 3.0, 6.0] {
-            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
-            do {
-                try await WKWebsiteDataStore.remove(forIdentifier: id)
-                data.pendingDeletion.removeAll { $0 == id }
-                save()
-                return
-            } catch {
-                NSLog("XSpace: could not delete data store %@ (%@), retrying", id.uuidString, error.localizedDescription)
-            }
+    /// Permanently deletes a profile's data store once WebKit has released it (see
+    /// DataStoreRemoval). If that fails, the store stays in `pendingDeletion` and is deleted at
+    /// the next launch.
+    func removeDataStore(_ removal: DataStoreRemoval) async {
+        if let failure = await removal.remove() {
+            NSLog("XSpace: could not delete data store %@ (%@); retrying at the next launch",
+                  removal.id?.uuidString ?? "?", failure)
+            return
         }
+        data.pendingDeletion.removeAll { $0 == removal.id }
+        save()
     }
 }

@@ -6,6 +6,11 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+- Deleting a profile removes its data from disk as soon as WebKit lets go of it, usually within a
+  few seconds. Before, XSpace retried after 1, 4 and 10 seconds. If WebKit holds on to the data
+  for more than 30 seconds, it is deleted at the next launch, as before.
+
 ### Removed
 - Support for macOS 14 and 15: XSpace now requires macOS 26 or later, and CI and release builds
   run on macOS 26 only. XSpace 0.4.0 remains available for macOS 14 and 15.

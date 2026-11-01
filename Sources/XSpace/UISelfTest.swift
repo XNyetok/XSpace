@@ -1,4 +1,5 @@
 import AppKit
+import Darwin
 import WebKit
 
 /// `XSpace --selftest-ui [shot.png]`: runs the real XSpace window with THROWAWAY state
@@ -131,8 +132,35 @@ final class UISelfTest: NSObject, NSApplicationDelegate {
             await controller.writeSnapshot(to: URL(fileURLWithPath: args[index + 1]))
         }
 
-        log("\n[6] Clean up")
-        let removals = controller.profiles.map { DataStoreRemoval($0.store) }
+        log("\n[6] Deleting a profile")
+        // A new profile is selected, so its panes load, as when the user deletes the profile on
+        // screen. Only its ID is kept here: holding the Profile would keep its data store alive.
+        let third = controller.createProfile(name: "Uji 3").id
+        await pause(3)
+        let watch = controller.profiles.first { $0.id == third }.map {
+            DeletionWatch(profile: $0, row: controller.testRow($0.name))
+        }
+        let deleteStart = Date()
+        await controller.testDelete(third)
+        let seconds = String(format: "%.1f", Date().timeIntervalSince(deleteStart))
+        let released = watch?.xspaceReleased ?? false
+        check(released, "XSpace lets go of a deleted profile" + (released ? "" : " (still alive: \(watch?.alive ?? "-"))"))
+        let stores = await WKWebsiteDataStore.allDataStoreIdentifiers
+        let queued = StateStore.shared.data.pendingDeletion.contains(third)
+        let heldByWebKit = queued && released && watch?.storeReleased == false
+        if heldByWebKit {
+            // WebKit can hold a store for longer than DataStoreRemoval waits (seen once on macOS 26,
+            // cause unknown). The app then deletes it at the next launch, so this is no failure;
+            // the note records what was still alive. The cleanup below deletes it.
+            log("  NOTE  WebKit still held the data store after \(seconds) s, so the app deletes it at "
+                + "the next launch (still alive: \(watch?.alive ?? "-"))")
+        } else {
+            check(!queued && !stores.contains(third), "Deleting a profile deletes its data store right away (\(seconds) s)")
+        }
+
+        log("\n[7] Clean up")
+        var removals = controller.profiles.map { DataStoreRemoval($0.store) }
+        if heldByWebKit, let removal = watch?.removal { removals.append(removal) }
         controller.testDestroyAll()
         controller.close()
         for removal in removals {
@@ -168,5 +196,59 @@ final class UISelfTest: NSObject, NSApplicationDelegate {
     private func log(_ text: String) {
         print(text)
         fflush(stdout)
+    }
+}
+
+/// Watches a profile while it is deleted (see [6]) without keeping anything alive: weak references
+/// to XSpace's objects and the data store, and the PIDs of the panes' page processes.
+@MainActor
+private final class DeletionWatch {
+    private final class WeakBox {
+        weak var object: AnyObject?
+        init(_ object: AnyObject) { self.object = object }
+    }
+
+    /// Deletes the store if the app could not (see [7]).
+    let removal: DataStoreRemoval
+    private let xspaceObjects: [(name: String, box: WeakBox)]
+    private let store: WeakBox
+    private let pids: [pid_t]
+
+    init(profile: Profile, row: ProfileRowView?) {
+        removal = DataStoreRemoval(profile.store)
+        store = WeakBox(profile.store)
+        var objects: [(name: String, box: WeakBox)] = [("profile", WeakBox(profile))]
+        if let row { objects.append(("row", WeakBox(row))) }
+        var pids: [pid_t] = []
+        for (index, pane) in (row?.panes ?? []).enumerated() {
+            objects.append(("pane \(index + 1)", WeakBox(pane)))
+            objects.append(("web view \(index + 1)", WeakBox(pane.webView)))
+            if let pid = MemoryProbe.pid(of: pane.webView, "_webProcessIdentifier"), !pids.contains(pid) {
+                pids.append(pid)
+            }
+        }
+        xspaceObjects = objects
+        self.pids = pids
+    }
+
+    /// XSpace no longer holds the profile, its row, its panes or their web views.
+    var xspaceReleased: Bool { xspaceObjects.allSatisfy { $0.box.object == nil } }
+
+    var storeReleased: Bool { store.object == nil }
+
+    /// What is still alive, for messages.
+    var alive: String {
+        var names = xspaceObjects.filter { $0.box.object != nil }.map { $0.name }
+        if !storeReleased { names.append("data store") }
+        let running = pids.filter { Self.isRunning($0) }
+        if !running.isEmpty { names.append("page processes \(running.map { String($0) }.joined(separator: ", "))") }
+        return names.isEmpty ? "nothing" : names.joined(separator: ", ")
+    }
+
+    /// Whether a process exists, with the process-info call the App Sandbox allows.
+    private static func isRunning(_ pid: pid_t) -> Bool {
+        var info = proc_taskinfo()
+        let size = Int32(MemoryLayout<proc_taskinfo>.size)
+        return proc_pidinfo(pid, PROC_PIDTASKINFO, 0, &info, size) == size
     }
 }

@@ -561,7 +561,12 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         }
     }
 
-    private func performDelete(_ id: UUID) {
+    /// Removes the profile from the window and the saved state, then deletes its data store in
+    /// the background. Returns that deletion, so the UI self-test can wait for it.
+    @discardableResult
+    private func performDelete(_ id: UUID) -> Task<Void, Never>? {
+        // Watch the data store before the last references to it go away (see DataStoreRemoval).
+        let removal = profiles.first { $0.id == id }.map { DataStoreRemoval($0.store) }
         PopupWindowController.closeAll(for: id)
         if let row = rows.removeValue(forKey: id) {
             row.destroy()
@@ -577,8 +582,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         state.save()
         rebuildSwitcher()
         applyVisibility()
-        Task { @MainActor in
-            await StateStore.shared.removeDataStore(id)
+        guard let removal else { return nil }
+        return Task { @MainActor in
+            await StateStore.shared.removeDataStore(removal)
         }
     }
 
@@ -652,6 +658,12 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
     func testSetPolicy(_ policy: HibernatePolicy) {
         state.data.hibernatePolicy = policy
         applyVisibility()
+    }
+
+    /// Deletes a profile like the delete-profile command, without the confirmation dialog, and waits
+    /// until its data store is deleted (or left for the next launch).
+    func testDelete(_ id: UUID) async {
+        await performDelete(id)?.value
     }
 
     /// Destroys every profile without dialogs. The UI self-test then deletes their data stores.
